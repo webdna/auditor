@@ -149,6 +149,21 @@ grep -rn '|raw\|raw(' src/templates/
 - **User status changes write the `users` table without saving the element.** Activate, suspend,
   lock, unlock and group assignment fire their own `Users::EVENT_AFTER_*` events and no element save
   (found building the Typesense plugin from LLL). A watcher fed only by saves misses them.
+- **`Users::EVENT_AFTER_VERIFY_EMAIL` does not mean an address was verified.** It fires from
+  `UsersController::_processTokenRequest()` when any verification link is *opened* — the set-password
+  link included — on the GET, before anything is verified. `Users::verifyEmailForUser()`, which does
+  the verifying, fires nothing. The user record's `afterUpdate` is where it shows: `unverifiedEmail`
+  cleared and `email` set to it (task 2.1).
+- **`EVENT_LOGIN_FAILURE`'s `authError` can be a cover story.** With `preventUserEnumeration` on,
+  `helpers/User::getLoginFailureInfo()` turns `account_locked` and `account_cooldown` into
+  `invalid_credentials` before the event fires; `$event->user->authError` keeps the real one. Found on
+  the craft5 sandbox, which has the setting on; the harness has it off.
+- **A wrong two-step code raises no failure event.** `Auth::verify()` (`services/Auth.php:235`) only
+  calls `handleInvalidLoginParam()`, so it counts toward the lock-out and nothing else hears it.
+- **The user record's `afterUpdate` carries every changed column's old value**
+  (`AfterSaveEvent::$changedAttributes`) at no cost, and every writer of the `users` table goes
+  through it — but Yii counts a column changed when the new value is not *identical*, and a boolean
+  read back from MySQL is an integer, so compare booleans as booleans.
 
 ### Craft — lifecycle
 
@@ -211,6 +226,10 @@ grep -rn '|raw\|raw(' src/templates/
   `maxAuthors` is raised. `tests/Support/TestSite.php` builds §7's content model inside each test's
   transaction.
 
+- **Signing in inside the harness** needs an active user and a request with a user agent and an
+  address (`requireUserAgentAndIpForSession` is on by default and the CLI has neither), or
+  `login()` quietly returns false. Craft's real login action runs through `Craft::$app->runAction()`
+  with `REQUEST_METHOD=POST`, body params set and CSRF validation off (`AuthWatcherTest::postLogin()`).
 - **Craft 5's `TestSetup::configureCraft()` needs `CRAFT_ROOT_PATH` and `CRAFT_TESTS_PATH` defined,
   and every `CRAFT_*_PATH` directory to exist** (it `realpath()`s them). Older harnesses omit both and
   fail with "Undefined constant".
