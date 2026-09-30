@@ -2,7 +2,6 @@
 
 namespace webdna\auditor\tests\integration;
 
-use Closure;
 use Codeception\Test\Unit;
 use Craft;
 use craft\controllers\UsersController;
@@ -10,7 +9,6 @@ use craft\db\Connection;
 use craft\elements\User;
 use craft\helpers\Session;
 use craft\services\Users;
-use craft\web\Request;
 use craft\web\User as WebUser;
 use RuntimeException;
 use webdna\auditor\Auditor;
@@ -36,6 +34,7 @@ use yii\web\UserEvent;
 class AuthWatcherTest extends Unit
 {
     use SecondConnection;
+    use WebRequests;
 
     private const PASSWORD = 'correct-horse-battery';
 
@@ -386,55 +385,7 @@ class AuthWatcherTest extends Unit
      */
     private function postLogin(string $loginName, string $password): void
     {
-        $this->asWebRequest(function() use ($loginName, $password) {
-            /** @var Request $request */
-            $request = Craft::$app->getRequest();
-            $method = $_SERVER['REQUEST_METHOD'] ?? null;
-            $csrf = $request->enableCsrfValidation;
-            $_SERVER['REQUEST_METHOD'] = 'POST';
-            $request->enableCsrfValidation = false;
-            $request->getHeaders()->set('Accept', 'application/json');
-            $request->setBodyParams(['loginName' => $loginName, 'password' => $password]);
-
-            try {
-                Craft::$app->runAction('users/login');
-            } finally {
-                $request->setBodyParams([]);
-                $request->getHeaders()->remove('Accept');
-                $request->enableCsrfValidation = $csrf;
-                if ($method === null) {
-                    unset($_SERVER['REQUEST_METHOD']);
-                } else {
-                    $_SERVER['REQUEST_METHOD'] = $method;
-                }
-            }
-        });
-    }
-
-    private function asWebRequest(Closure $callback): void
-    {
-        /** @var Request $request */
-        $request = Craft::$app->getRequest();
-        $console = $request->getIsConsoleRequest();
-        $request->setIsConsoleRequest(false);
-        $request->setIsCpRequest(false);
-        // Craft refuses a session to a request without both (requireUserAgentAndIpForSession).
-        $request->getHeaders()->set('User-Agent', 'AuditorTest/1.0');
-        $address = $_SERVER['REMOTE_ADDR'] ?? null;
-        $_SERVER['REMOTE_ADDR'] = '192.0.2.1';
-
-        try {
-            $callback();
-        } finally {
-            $request->getHeaders()->remove('User-Agent');
-            if ($address === null) {
-                unset($_SERVER['REMOTE_ADDR']);
-            } else {
-                $_SERVER['REMOTE_ADDR'] = $address;
-            }
-            $request->setIsCpRequest(null);
-            $request->setIsConsoleRequest($console);
-        }
+        $this->asWebRequest(fn() => $this->post('users/login', ['loginName' => $loginName, 'password' => $password]));
     }
 
     /**
