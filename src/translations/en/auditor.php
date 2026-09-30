@@ -114,4 +114,11 @@ return [
     'Included in a batch of {count} {type}' => 'Included in a batch of {count} {type}',
     'Included in a batch of {count} {type} ({name})' => 'Included in a batch of {count} {type} ({name})',
     'elements' => 'elements',
+
+    // Activity (Pro)
+    'See what each user changed and what happened to their account' => 'See what each user changed and what happened to their account',
+    'Activity' => 'Activity',
+    'Changes they made' => 'Changes they made',
+    'Account events' => 'Account events',
+    'No account events recorded since Auditor was installed.' => 'No account events recorded since Auditor was installed.',
 ];

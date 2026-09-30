@@ -7,7 +7,9 @@ use craft\base\Element;
 use craft\base\ElementInterface;
 use craft\base\Model;
 use craft\base\Plugin;
+use craft\controllers\UsersController;
 use craft\elements\User;
+use craft\events\DefineEditUserScreensEvent;
 use craft\events\DefineMenuItemsEvent;
 use craft\events\RegisterUrlRulesEvent;
 use craft\events\RegisterUserPermissionsEvent;
@@ -67,6 +69,16 @@ class Auditor extends Plugin
     public const PERMISSION_VIEW_HISTORY = 'auditor:viewHistory';
 
     /**
+     * Opening a user's Activity (BR-28, BR-32). Pro only.
+     */
+    public const PERMISSION_VIEW_USER_ACTIVITY = 'auditor:viewUserActivity';
+
+    /**
+     * The Activity screen's id among a user's edit screens, and the last segment of its address.
+     */
+    public const ACTIVITY_SCREEN = 'activity';
+
+    /**
      * The History item's id in an element's action menu, a test hook (§7).
      */
     public const HISTORY_MENU_ITEM = 'auditor-history';
@@ -114,6 +126,7 @@ class Auditor extends Plugin
         $this->registerFlushes($elements);
         $this->registerControlPanel();
         $this->offerHistory();
+        $this->offerActivity();
     }
 
     public function getRecorder(): Recorder
@@ -142,6 +155,8 @@ class Auditor extends Plugin
     {
         Event::on(UrlManager::class, UrlManager::EVENT_REGISTER_CP_URL_RULES, function(RegisterUrlRulesEvent $event) {
             $event->rules[self::HANDLE] = self::HANDLE . '/events/log';
+            $event->rules['users/<userId:\\d+>/' . self::ACTIVITY_SCREEN] = self::HANDLE . '/activity/index';
+            $event->rules['myaccount/' . self::ACTIVITY_SCREEN] = self::HANDLE . '/activity/index';
         });
 
         Event::on(UserPermissions::class, UserPermissions::EVENT_REGISTER_PERMISSIONS, function(RegisterUserPermissionsEvent $event) {
@@ -153,6 +168,9 @@ class Auditor extends Plugin
             if ($this->is(self::EDITION_PRO)) {
                 $permissions[self::PERMISSION_VIEW_HISTORY] = [
                     'label' => Craft::t('auditor', 'See the history of what they can view'),
+                ];
+                $permissions[self::PERMISSION_VIEW_USER_ACTIVITY] = [
+                    'label' => Craft::t('auditor', 'See what each user changed and what happened to their account'),
                 ];
             }
 
@@ -222,6 +240,24 @@ class Auditor extends Plugin
                 ],
             ],
         ];
+    }
+
+    /**
+     * Activity among a user's edit screens, on Pro, for someone allowed to open it (BR-32,
+     * BR-33). Only a permission is asked, so a user's other screens pay nothing for it (BR-37).
+     */
+    private function offerActivity(): void
+    {
+        Event::on(UsersController::class, UsersController::EVENT_DEFINE_EDIT_SCREENS, function(DefineEditUserScreensEvent $event) {
+            if ($this->offersActivity($event->currentUser)) {
+                $event->screens[self::ACTIVITY_SCREEN] = ['label' => Craft::t('auditor', 'Activity')];
+            }
+        });
+    }
+
+    public function offersActivity(?User $viewer): bool
+    {
+        return $this->is(self::EDITION_PRO) && (bool)$viewer?->can(self::PERMISSION_VIEW_USER_ACTIVITY);
     }
 
     /**
