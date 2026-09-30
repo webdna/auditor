@@ -7,6 +7,7 @@ use craft\base\FieldInterface;
 use craft\elements\Asset;
 use craft\elements\Entry;
 use craft\elements\User;
+use craft\enums\PropagationMethod;
 use craft\fieldlayoutelements\CustomField;
 use craft\fieldlayoutelements\entries\EntryTitleField;
 use craft\fields\Assets as AssetsField;
@@ -28,6 +29,7 @@ use craft\models\FieldLayout;
 use craft\models\FieldLayoutTab;
 use craft\models\Section;
 use craft\models\Section_SiteSettings;
+use craft\models\Site;
 use craft\models\UserGroup;
 use craft\models\Volume;
 use RuntimeException;
@@ -127,6 +129,44 @@ class TestSite
         $this->save($user);
 
         return $user;
+    }
+
+    /**
+     * Two more sites and a channel, `localised`, enabled in all three and propagating to all, so a
+     * save made in one site is copied into the others (TN-9).
+     */
+    public function localised(): Section
+    {
+        $sites = Craft::$app->getSites();
+        $primary = $sites->getPrimarySite();
+        $settings = [new Section_SiteSettings(['siteId' => $primary->id, 'hasUrls' => false, 'enabledByDefault' => true])];
+
+        foreach (['second' => 'Second', 'third' => 'Third'] as $handle => $name) {
+            $site = new Site([
+                'groupId' => $primary->groupId,
+                'name' => $name,
+                'handle' => $handle,
+                'language' => 'en-GB',
+                'hasUrls' => false,
+            ]);
+            $this->ok($sites->saveSite($site), $site);
+            $settings[] = new Section_SiteSettings(['siteId' => $site->id, 'hasUrls' => false, 'enabledByDefault' => true]);
+        }
+
+        // Craft caches the answer, and without a fresh one it never propagates.
+        Craft::$app->getIsMultiSite(true);
+
+        $section = new Section([
+            'name' => 'Localised',
+            'handle' => 'localised',
+            'type' => Section::TYPE_CHANNEL,
+            'propagationMethod' => PropagationMethod::All,
+            'siteSettings' => $settings,
+        ]);
+        $section->setEntryTypes([$this->page]);
+        $this->ok(Craft::$app->getEntries()->saveSection($section), $section);
+
+        return $section;
     }
 
     public static function removeFiles(): void

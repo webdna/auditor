@@ -107,6 +107,20 @@ class Recorder extends Component
     }
 
     /**
+     * Whether a row recorded now would be kept (BR-5) — asked by a watcher before it spends a query
+     * on a row the context would drop anyway.
+     */
+    public function isRecording(): bool
+    {
+        try {
+            return $this->getSettings()->records($this->context());
+        } catch (Throwable $e) {
+            $this->fail('Could not tell whether to record', $e);
+            return false;
+        }
+    }
+
+    /**
      * Writes every ready row in one insert, and forgets them whether or not the insert worked.
      *
      * With a transaction still open nothing is written, because the insert would become part of
@@ -164,6 +178,7 @@ class Recorder extends Component
      * Rows held for a transaction that has not yet committed. For tests.
      *
      * @return Event[]
+     * @phpstan-impure
      */
     public function getPending(): array
     {
@@ -174,6 +189,7 @@ class Recorder extends Component
      * Rows the next flush writes. For tests.
      *
      * @return Event[]
+     * @phpstan-impure
      */
     public function getReady(): array
     {

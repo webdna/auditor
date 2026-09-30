@@ -8,6 +8,7 @@ use craft\base\Plugin;
 use webdna\auditor\models\Settings;
 use webdna\auditor\services\Differ;
 use webdna\auditor\services\Recorder;
+use webdna\auditor\watchers\ElementWatcher;
 use yii\base\Application;
 use yii\base\Event;
 use yii\queue\ExecEvent;
@@ -71,6 +72,7 @@ class Auditor extends Plugin
         parent::init();
 
         $this->registerFlushes();
+        (new ElementWatcher($this))->attach();
     }
 
     public function getRecorder(): Recorder
