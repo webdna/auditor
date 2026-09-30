@@ -113,6 +113,8 @@ class Differ extends Component
             foreach (array_keys($columns) as $name) {
                 $storedAttributes[$name] = $row[$name] ?? null;
             }
+
+            $storedFields += $this->storedRelations($element, array_diff_key($fields, $storedFields));
         }
 
         foreach ($attributes as $name => $source) {
@@ -331,6 +333,49 @@ class Differ extends Component
 
         /** @var array<string, mixed>|null */
         return $query->select($select)->one($this->db) ?: null;
+    }
+
+    /**
+     * The stored ids of relation fields that have nothing in the content row.
+     *
+     * Craft has mirrored relations into the content row only since 5.3, so an element not saved
+     * since then — or since the field joined its layout — has no content value for the field, and
+     * Craft reads the `relations` table instead (`BaseRelationField::normalizeValue()`). So does
+     * this, in one query for all such fields, and before the save rewrites that table. As in Craft,
+     * only the first instance of a field in the layout takes the table's value.
+     *
+     * @param array<string, FieldInterface> $fields Candidate fields with no stored content, by handle
+     * @return array<string, int[]>
+     */
+    private function storedRelations(ElementInterface $element, array $fields): array
+    {
+        $handles = [];
+        foreach ($fields as $handle => $field) {
+            if ($field instanceof BaseRelationField && $field->id && !isset($handles[$field->id])) {
+                $handles[$field->id] = $handle;
+            }
+        }
+        if ($handles === []) {
+            return [];
+        }
+
+        $rows = (new Query())
+            ->select(['fieldId', 'targetId'])
+            ->from(CraftTable::RELATIONS)
+            ->where([
+                'sourceId' => $element->id,
+                'fieldId' => array_keys($handles),
+            ])
+            ->andWhere(['or', ['sourceSiteId' => null], ['sourceSiteId' => $element->siteId]])
+            ->orderBy(['sortOrder' => SORT_ASC])
+            ->all($this->db);
+
+        $stored = array_fill_keys($handles, []);
+        foreach ($rows as $row) {
+            $stored[$handles[(int)$row['fieldId']]][] = (int)$row['targetId'];
+        }
+
+        return $stored;
     }
 
     /**
