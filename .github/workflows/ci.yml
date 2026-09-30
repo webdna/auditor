@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    name: check (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.4']
+    env:
+      PHP_VERSION: ${{ matrix.php }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The same containers as a local run (docker-compose.yml), so CI and a laptop cannot disagree.
+      - name: Build the PHP image
+        run: docker compose build php
+
+      - name: Start MySQL
+        run: docker compose up -d --wait mysql
+
+      - name: Install dependencies
+        run: docker compose run --rm php composer install --no-interaction --no-progress
+
+      - name: Validate composer.json
+        run: docker compose run --rm php composer validate --strict --no-plugins
+
+      # BR-38: the plugin is sold to sites that have none of these.
+      - name: No site-specific names
+        run: "! grep -rniE 'turf|otis|listingsource|seomatic|redactor|lll|members|companies' src/"
+
+      # BR-30: logged values are user input.
+      - name: Nothing rendered unescaped
+        run: "test ! -d src/templates || ! grep -rn '|raw\\|raw(' src/templates/"
+
+      - name: ECS, PHPStan, unit and integration suites
+        run: docker compose run --rm php composer check

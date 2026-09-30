@@ -1,0 +1,85 @@
+{
+    "name": "webdna/craft-auditor",
+    "description": "An audit log for Craft CMS: who changed what, when, from where and what it said before, plus every sign-in and change of access, in one log.",
+    "type": "craft-plugin",
+    "keywords": [
+        "craft",
+        "cms",
+        "craftcms",
+        "craft-plugin",
+        "audit",
+        "audit log",
+        "history",
+        "security"
+    ],
+    "license": "proprietary",
+    "authors": [
+        {
+            "name": "webdna",
+            "homepage": "https://webdna.co.uk"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/webdna/craft-auditor/issues",
+        "source": "https://github.com/webdna/craft-auditor",
+        "docs": "https://github.com/webdna/craft-auditor/blob/main/README.md"
+    },
+    "require": {
+        "php": "^8.2",
+        "craftcms/cms": "^5.6"
+    },
+    "require-dev": {
+        "codeception/codeception": "^5.2",
+        "codeception/module-asserts": "^3.0",
+        "codeception/module-yii2": "^1.1",
+        "craftcms/ecs": "dev-main",
+        "craftcms/phpstan": "dev-main",
+        "phpstan/phpstan": "^2.1",
+        "vlucas/phpdotenv": "^5.4"
+    },
+    "autoload": {
+        "psr-4": {
+            "webdna\\auditor\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "webdna\\auditor\\tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "check": [
+            "@cs",
+            "@analyse",
+            "@test:unit",
+            "@test:integration"
+        ],
+        "cs": "ecs check --ansi",
+        "cs-fix": "ecs check --ansi --fix",
+        "analyse": "phpstan analyse --memory-limit=1G --no-progress",
+        "test:unit": "codecept run unit",
+        "test:integration": "codecept run integration"
+    },
+    "extra": {
+        "name": "Auditor",
+        "handle": "auditor",
+        "class": "webdna\\auditor\\Auditor",
+        "developer": "webdna",
+        "developerUrl": "https://webdna.co.uk",
+        "documentationUrl": "https://github.com/webdna/craft-auditor/blob/main/README.md",
+        "changelogUrl": "https://raw.githubusercontent.com/webdna/craft-auditor/main/CHANGELOG.md"
+    },
+    "config": {
+        "sort-packages": true,
+        "platform": {
+            "php": "8.2"
+        },
+        "allow-plugins": {
+            "craftcms/plugin-installer": true,
+            "php-http/discovery": false,
+            "yiisoft/yii2-composer": true
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
