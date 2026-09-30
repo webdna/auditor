@@ -5,8 +5,13 @@ namespace webdna\auditor;
 use Craft;
 use craft\base\Model;
 use craft\base\Plugin;
+use craft\events\RegisterUrlRulesEvent;
+use craft\events\RegisterUserPermissionsEvent;
+use craft\services\UserPermissions;
+use craft\web\UrlManager;
 use webdna\auditor\models\Settings;
 use webdna\auditor\services\Differ;
+use webdna\auditor\services\Events;
 use webdna\auditor\services\Recorder;
 use webdna\auditor\watchers\AuthWatcher;
 use webdna\auditor\watchers\ElementWatcher;
@@ -27,6 +32,7 @@ use yii\queue\Queue;
  * @method Settings getSettings()
  * @property-read Recorder $recorder
  * @property-read Differ $differ
+ * @property-read Events $events
  */
 class Auditor extends Plugin
 {
@@ -39,10 +45,24 @@ class Auditor extends Plugin
     public const EDITION_PRO = 'pro';
 
     /**
+     * Opening the log (BR-28). It is Craft's own "Access Auditor": Craft refuses every control
+     * panel address under the plugin's handle without it, so a permission of the plugin's own
+     * could never open the log alone.
+     */
+    public const PERMISSION_VIEW_LOG = 'accessPlugin-' . self::HANDLE;
+
+    /**
+     * Seeing the address and browser a row came from (BR-27).
+     */
+    public const PERMISSION_VIEW_NETWORK = 'auditor:viewNetwork';
+
+    /**
      * Starts above 1.0.0 on purpose (BR-39): a different plugin with this handle was installed at
      * 1.0.0 on some sites, and only a higher version makes Craft run this plugin's migrations there.
      */
     public string $schemaVersion = '2.0.0';
+
+    public bool $hasCpSection = true;
 
     /**
      * @return string[]
@@ -64,6 +84,7 @@ class Auditor extends Plugin
             'components' => [
                 'recorder' => Recorder::class,
                 'differ' => Differ::class,
+                'events' => Events::class,
             ],
         ];
     }
@@ -76,6 +97,7 @@ class Auditor extends Plugin
         $elements->attach();
         (new AuthWatcher($this))->attach();
         $this->registerFlushes($elements);
+        $this->registerControlPanel();
     }
 
     public function getRecorder(): Recorder
@@ -88,6 +110,34 @@ class Auditor extends Plugin
     {
         /** @var Differ */
         return $this->get('differ');
+    }
+
+    public function getEvents(): Events
+    {
+        /** @var Events */
+        return $this->get('events');
+    }
+
+    /**
+     * The log screen's address and the permissions of BR-28. Class-level listeners, so neither
+     * the URL manager nor the permissions service is created just to be listened to.
+     */
+    private function registerControlPanel(): void
+    {
+        Event::on(UrlManager::class, UrlManager::EVENT_REGISTER_CP_URL_RULES, function(RegisterUrlRulesEvent $event) {
+            $event->rules[self::HANDLE] = self::HANDLE . '/events/log';
+        });
+
+        Event::on(UserPermissions::class, UserPermissions::EVENT_REGISTER_PERMISSIONS, function(RegisterUserPermissionsEvent $event) {
+            $event->permissions[] = [
+                'heading' => Craft::t('auditor', 'Auditor'),
+                'permissions' => [
+                    self::PERMISSION_VIEW_NETWORK => [
+                        'label' => Craft::t('auditor', 'See the address and browser each event came from'),
+                    ],
+                ],
+            ];
+        });
     }
 
     /**

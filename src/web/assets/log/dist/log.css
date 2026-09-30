@@ -1,0 +1,90 @@
+.auditor-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 0 var(--l, 24px);
+  align-items: end;
+  margin-bottom: 24px;
+}
+
+.auditor-filters .field {
+  margin: 0 0 16px !important;
+}
+
+.auditor-filters .field:first-of-type {
+  grid-column: 1 / -1;
+}
+
+.auditor-filter-buttons {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.auditor-log td {
+  vertical-align: top;
+}
+
+.auditor-open {
+  text-align: start;
+}
+
+.auditor-older {
+  margin-top: 16px;
+  text-align: center;
+}
+
+.auditor-slideout {
+  width: min(44rem, 100vw);
+}
+
+.auditor-detail {
+  overflow-y: auto;
+  height: 100%;
+}
+
+.auditor-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.auditor-detail-header h2 {
+  margin: 0;
+}
+
+.auditor-facts {
+  display: grid;
+  grid-template-columns: minmax(7rem, max-content) 1fr;
+  gap: 6px 16px;
+  margin: 0 0 24px;
+}
+
+.auditor-facts dt {
+  font-weight: bold;
+}
+
+.auditor-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.auditor-changes {
+  margin-bottom: 24px;
+}
+
+.auditor-changes th,
+.auditor-changes td {
+  vertical-align: top;
+}
+
+.auditor-value {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.auditor-more {
+  margin-top: 4px;
+}

@@ -1,0 +1,160 @@
+{#
+ # The log screen (BR-29): filters, then the newest page of rows. Older pages are appended by
+ # log.js from actions/auditor/events/index; a row opens its detail in a slideout.
+ #}
+{% extends '_layouts/cp' %}
+{% import '_includes/forms' as forms %}
+
+{% do view.registerAssetBundle('webdna\\auditor\\web\\assets\\log\\LogAsset') %}
+{% do view.registerTranslations('auditor', [
+    'This event could not be loaded.',
+    'Older events could not be loaded.',
+]) %}
+
+{% set title = 'Auditor'|t('auditor') %}
+
+{% block content %}
+    <form method="get" action="{{ formAction }}" class="auditor-filters" data-auditor-filters>
+        {% for name, value in formHidden %}
+            {{ hiddenInput(name, value) }}
+        {% endfor %}
+
+        {{ forms.textField({
+            label: 'Search'|t('auditor'),
+            instructions: 'Matches what it happened to and who did it.'|t('auditor'),
+            id: 'auditor-search',
+            name: 'search',
+            value: filter.search,
+            type: 'search',
+        }) }}
+
+        {{ forms.selectField({
+            label: 'Kind'|t('auditor'),
+            id: 'auditor-family',
+            name: 'family',
+            options: options.family,
+            value: filter.family,
+        }) }}
+
+        {{ forms.selectField({
+            label: 'Event'|t('auditor'),
+            id: 'auditor-event',
+            name: 'event',
+            options: options.event,
+            value: filter.event,
+        }) }}
+
+        {{ forms.selectField({
+            label: 'Type'|t('auditor'),
+            id: 'auditor-type',
+            name: 'elementType',
+            options: options.elementType,
+            value: filter.elementType,
+        }) }}
+
+        {{ forms.elementSelectField({
+            label: 'Who'|t('auditor'),
+            id: 'auditor-actor',
+            name: 'actor',
+            elementType: 'craft\\elements\\User',
+            elements: actor ? [actor] : [],
+            limit: 1,
+            showSiteMenu: false,
+        }) }}
+
+        {{ forms.selectField({
+            label: 'Where'|t('auditor'),
+            id: 'auditor-context',
+            name: 'context',
+            options: options.context,
+            value: filter.context,
+        }) }}
+
+        {% if multiSite %}
+            {{ forms.selectField({
+                label: 'Site'|t('app'),
+                id: 'auditor-site',
+                name: 'siteId',
+                options: options.siteId,
+                value: filter.siteId,
+            }) }}
+        {% endif %}
+
+        {{ forms.dateField({
+            label: 'From'|t('auditor'),
+            id: 'auditor-from',
+            name: 'from',
+            value: filter.from,
+        }) }}
+
+        {{ forms.dateField({
+            label: 'To'|t('auditor'),
+            id: 'auditor-to',
+            name: 'to',
+            value: filter.to,
+        }) }}
+
+        {% if filter.request %}
+            {{ hiddenInput('request', filter.request) }}
+        {% endif %}
+
+        <div class="auditor-filter-buttons">
+            <button type="submit" class="btn submit">{{ 'Filter'|t('auditor') }}</button>
+            {% if not filter.isEmpty() %}
+                <a class="btn" href="{{ formAction }}">{{ 'Clear filters'|t('auditor') }}</a>
+            {% endif %}
+        </div>
+    </form>
+
+    {% if filter.request %}
+        <p class="light">{{ 'Showing everything recorded in one request.'|t('auditor') }}</p>
+    {% endif %}
+
+    {% if events is empty %}
+        <div class="zilch auditor-empty" data-auditor-empty>
+            {% if filter.isEmpty() %}
+                <p>{{ 'Nothing recorded yet — changes and sign-ins appear here as they happen.'|t('auditor') }}</p>
+                {% if docsUrl %}
+                    <p><a href="{{ docsUrl }}" rel="noopener" target="_blank">{{ 'How to configure Auditor'|t('auditor') }}</a></p>
+                {% endif %}
+            {% else %}
+                <p>{{ 'No events match these filters.'|t('auditor') }}</p>
+            {% endif %}
+        </div>
+    {% else %}
+        <div class="tableview auditor-log">
+            <table class="data fullwidth">
+                <thead>
+                    <tr>
+                        <th scope="col">{{ 'When'|t('auditor') }}</th>
+                        <th scope="col">{{ 'Event'|t('auditor') }}</th>
+                        <th scope="col">{{ 'What'|t('auditor') }}</th>
+                        <th scope="col">{{ 'Who'|t('auditor') }}</th>
+                        <th scope="col">{{ 'Where'|t('auditor') }}</th>
+                        {% if multiSite %}
+                            <th scope="col">{{ 'Site'|t('app') }}</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody data-auditor-rows>
+                    {% for event in events %}
+                        {% include 'auditor/_row' with {
+                            event: event,
+                            url: urls[event.id] ?? null,
+                            auditor: auditor,
+                            multiSite: multiSite,
+                        } only %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if after %}
+            <div class="auditor-older">
+                <button type="button" class="btn" data-auditor-older data-after="{{ after }}" data-filter="{{ filter.toParams()|json_encode }}">
+                    {{ 'Older events'|t('auditor') }}
+                </button>
+            </div>
+        {% endif %}
+    {% endif %}
+{% endblock %}

@@ -1,0 +1,116 @@
+{#
+ # One row in full, for the slideout: what happened, who did it and from where, then the fields
+ # it changed (Field / Before / After) and the rest of its payload.
+ #
+ # Nothing logged is rendered unescaped (BR-30), and a value longer than 500 characters shows its
+ # start with a control for the rest. The address and browser are already cleared for a viewer
+ # without the permission to see them (BR-27), so they read "—".
+ #}
+{% macro value(text) %}
+    {%- if text is same as('') -%}
+        <span class="light">—</span>
+    {%- elseif text|length > 500 -%}
+        <div class="auditor-value" data-auditor-truncated>
+            <span>{{ text|slice(0, 500) }}</span><span class="auditor-ellipsis">…</span><span class="auditor-rest hidden">{{ text|slice(500) }}</span>
+            <button type="button" class="btn small auditor-more" data-auditor-more aria-expanded="false"
+                data-more="{{ 'Show more'|t('auditor') }}" data-less="{{ 'Show less'|t('auditor') }}">
+                {{- 'Show more'|t('auditor') -}}
+            </button>
+        </div>
+    {%- else -%}
+        <div class="auditor-value">{{ text }}</div>
+    {%- endif -%}
+{% endmacro %}
+
+{% set redacted %}<span class="light">{{ 'changed (value not recorded)'|t('auditor') }}</span>{% endset %}
+
+<div class="auditor-detail" data-auditor-detail="{{ event.id }}">
+    <header class="auditor-detail-header">
+        <h2>{{ auditor.eventLabel(event.event) }}</h2>
+        <button type="button" class="btn" data-auditor-close>{{ 'Close'|t('app') }}</button>
+    </header>
+
+    <dl class="auditor-facts">
+        <dt>{{ 'What'|t('auditor') }}</dt>
+        <dd>
+            {% if url %}
+                <a href="{{ url }}">{{ event.elementLabel }}</a>
+            {% else %}
+                {{ event.elementLabel ?? '—' }}
+            {% endif %}
+            {% if event.elementType %}
+                <span class="light">({{ auditor.typeLabel(event.elementType) }})</span>
+            {% endif %}
+        </dd>
+
+        <dt>{{ 'Who'|t('auditor') }}</dt>
+        <dd>
+            {{ event.actorLabel }}
+            {% if impersonator %}
+                <div class="light">{{ 'Signed in as them by {person}'|t('auditor')|replace({'{person}': impersonator}) }}</div>
+            {% endif %}
+        </dd>
+
+        <dt>{{ 'When'|t('auditor') }}</dt>
+        <dd><time datetime="{{ event.dateCreated|atom }}">{{ event.dateCreated|datetime('long') }}</time></dd>
+
+        <dt>{{ 'Where'|t('auditor') }}</dt>
+        <dd>
+            {{ auditor.contextLabel(event.context) }}
+            {% if event.contextDetail %}
+                <div class="light code">{{ event.contextDetail }}</div>
+            {% endif %}
+        </dd>
+
+        {% if event.siteId %}
+            <dt>{{ 'Site'|t('app') }}</dt>
+            <dd>{{ auditor.siteLabel(event.siteId) }}</dd>
+        {% endif %}
+
+        <dt>{{ 'Address'|t('auditor') }}</dt>
+        <dd data-auditor-ip>{{ event.ip ?? '—' }}</dd>
+
+        <dt>{{ 'Browser'|t('auditor') }}</dt>
+        <dd data-auditor-user-agent>{{ event.userAgent ?? '—' }}</dd>
+    </dl>
+
+    {% if described.changes is not empty %}
+        <h3>{{ 'Changes'|t('auditor') }}</h3>
+        <table class="data fullwidth auditor-changes">
+            <thead>
+                <tr>
+                    <th scope="col">{{ 'Field'|t('app') }}</th>
+                    <th scope="col">{{ 'Before'|t('auditor') }}</th>
+                    <th scope="col">{{ 'After'|t('auditor') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for change in described.changes %}
+                    <tr data-auditor-field="{{ change.key }}">
+                        <th scope="row">{{ change.label }}</th>
+                        {% if change.redacted %}
+                            <td colspan="2">{{ redacted }}</td>
+                        {% else %}
+                            <td>{{ _self.value(change.old) }}</td>
+                            <td>{{ _self.value(change.new) }}</td>
+                        {% endif %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+
+    {% if described.details is not empty %}
+        <h3>{{ 'Details'|t('auditor') }}</h3>
+        <dl class="auditor-facts auditor-payload">
+            {% for detail in described.details %}
+                <dt data-auditor-field="{{ detail.key }}">{{ detail.label }}</dt>
+                <dd>{{ detail.redacted ? redacted : _self.value(detail.value) }}</dd>
+            {% endfor %}
+        </dl>
+    {% endif %}
+
+    {% if requestUrl %}
+        <p><a href="{{ requestUrl }}">{{ 'Everything recorded in this request'|t('auditor') }}</a></p>
+    {% endif %}
+</div>

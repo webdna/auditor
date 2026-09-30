@@ -1,0 +1,39 @@
+{#
+ # One row of the log — the log screen's, and later History's and Activity's. Every value is
+ # escaped (BR-30). A subject that no longer exists, or that the viewer may not see, is its
+ # recorded label without a link (TN-5).
+ #}
+<tr data-auditor-event="{{ event.id }}">
+    <td>
+        <button type="button" class="btn-link auditor-open" data-auditor-open="{{ event.id }}"
+            aria-label="{{ 'Show the detail of this event'|t('auditor') }}">
+            <time datetime="{{ event.dateCreated|atom }}" title="{{ event.dateCreated|datetime('long') }}">
+                {{- event.dateCreated|datetime('short') -}}
+            </time>
+        </button>
+    </td>
+    <td>
+        {{ auditor.eventLabel(event.event) }}
+        <div class="light smalltext">{{ auditor.familyLabel(event.family) }}</div>
+    </td>
+    <td>
+        {% if url %}
+            <a href="{{ url }}">{{ event.elementLabel }}</a>
+        {% else %}
+            {{ event.elementLabel ?? '—' }}
+        {% endif %}
+        {% if event.elementType %}
+            <div class="light smalltext">{{ auditor.typeLabel(event.elementType) }}</div>
+        {% endif %}
+    </td>
+    <td>
+        {{ event.actorLabel }}
+        {% if event.impersonatorId %}
+            <div class="light smalltext">{{ 'Signed in by someone else'|t('auditor') }}</div>
+        {% endif %}
+    </td>
+    <td>{{ auditor.contextLabel(event.context) }}</td>
+    {% if multiSite %}
+        <td>{{ auditor.siteLabel(event.siteId) }}</td>
+    {% endif %}
+</tr>
