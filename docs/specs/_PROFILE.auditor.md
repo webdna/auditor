@@ -206,6 +206,16 @@ grep -rn '|raw\|raw(' src/templates/
   `Install.php`** — so the events table must also be created by an ordinary, idempotent migration,
   and the schema version must start above 1.0.0.
 
+### Craft — the control panel
+
+- **Craft refuses any control panel address whose first segment is a plugin's handle** to a user
+  without `accessPlugin-<handle>` (`web/Application.php:289`), whether or not the plugin sets
+  `hasCpSection` — and only a plugin with a CP section gets that permission registered. So
+  "Access Auditor" is the log's permission. Action requests skip that check; a controller must
+  make it itself (task 3.1).
+- **`Cp::nav()` makes every item's `url` absolute** (`web/twig/variables/Cp.php:404`) — compare
+  with `UrlHelper::cpUrl()`, not the handle.
+
 ### The old auditor's defects — do not repeat
 
 - **It rendered logged values with `raw()`** (`turf5/plugins/auditor/src/templates/detail.twig`).
@@ -239,6 +249,10 @@ grep -rn '|raw\|raw(' src/templates/
   `maxAuthors` is raised. `tests/Support/TestSite.php` builds §7's content model inside each test's
   transaction.
 
+- **The harness is a console app, so Craft points a plugin's `controllerNamespace` at
+  `console\controllers`.** Running a web controller through `runAction()` means setting it to
+  `webdna\auditor\controllers` for the test and putting it back (`LogScreenTest`). A
+  `renderTemplate()` response is rendered by `(new TemplateResponseFormatter())->format($response)`.
 - **Signing in inside the harness** needs an active user and a request with a user agent and an
   address (`requireUserAgentAndIpForSession` is on by default and the CLI has neither), or
   `login()` quietly returns false. Craft's real login action runs through `Craft::$app->runAction()`
