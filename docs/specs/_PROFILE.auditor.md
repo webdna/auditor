@@ -44,8 +44,21 @@ docker compose run --rm php composer cs            # ecs check (cs-fix to apply)
 PHP_VERSION=8.4 docker compose run --rm php composer check   # the second CI leg
 ```
 
-`validate` needs `--no-plugins` (see Traps). Manual testing uses the pilot site, LLL, through a
-composer **path repository** — only in the pilot task, and only on an LLL branch (see §6).
+`validate` needs `--no-plugins` (see Traps).
+
+**Real-app testing during development uses the craft5 sandbox** (Sam, 30 Sep 2026) — a DDEV
+Craft 5 install at `~/projects/craft5` with real, upgraded content. The suites above stay the proof;
+craft5 is where a task is also exercised against data the harness cannot fake. Auditor is
+bind-mounted into it (`.ddev/docker-compose.auditor.yaml` there → `plugins/auditor`), required
+through its `plugins/*` path repository (a symlink, so it is always the live checkout) and installed.
+Drive it with a throwaway script under craft5's `storage/` that boots the console app, then read
+`auditor_events` with `ddev mysql`; delete the script afterwards. **Run `ddev` there from
+`/Users/samuelbirch/projects/craft5` (lowercase p)** — that is the root DDEV registered, and from
+`~/Projects` a restart stops the project and then refuses to start it. Do not commit in craft5;
+it carries other plugins' uncommitted work.
+
+The pilot site, LLL, is touched only in the pilot task, through a composer **path repository**,
+and only on an LLL branch (see §6).
 
 ## 3. Where things go
 
@@ -111,6 +124,18 @@ grep -rn '|raw\|raw(' src/templates/
   is not stored at all. MySQL's JSON type reorders object keys, so a stored value compared to a fresh
   serialisation must ignore key order. Fields whose `dbType()` is null (Matrix, Content Block,
   Addresses) have no stored value on their owner. A relation field's serialisation runs an ids query.
+- **A relation field may have no content value at all, and then Craft reads the `relations` table**
+  (`fields/BaseRelationField.php:788`): relations have been mirrored into content only since 5.3, so
+  an element not saved since then — or since the field joined its layout — has no key for it. Every
+  site upgraded from Craft 4 is full of these. Treating the missing key as "empty" logs every
+  relation as newly added on the element's next save. Found on the craft5 sandbox, never in the
+  harness, whose content is always current.
+- **Applying an unpublished draft is a first save of an existing id** (`services/Drafts.php:387`,
+  `removeDraftData()` sets `firstSave`). The CP makes every new entry this way, so "new" is
+  `isNew || firstSave`, never `isNew` alone.
+- **Structure moves fire `afterUpdateElement` from 5.9 and `afterMoveElement` before it** — the old
+  constant still exists in 5.11 but nothing triggers it. The event's action is one of
+  `Structures::ACTION_*`: `prepend`, `append`, `placeBefore`, `placeAfter`.
 
 ### Craft — events that do not exist
 
