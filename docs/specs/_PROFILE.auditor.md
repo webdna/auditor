@@ -42,9 +42,16 @@ docker compose run --rm php composer test:integration
 docker compose run --rm php composer analyse       # phpstan
 docker compose run --rm php composer cs            # ecs check (cs-fix to apply)
 PHP_VERSION=8.4 docker compose run --rm php composer check   # the second CI leg
+docker compose run --rm php composer test:commerce  # the Commerce leg: own vendor dir, PHPStan + commerce suite
 ```
 
 `validate` needs `--no-plugins` (see Traps).
+
+`composer check` never installs Commerce, which is what proves TN-14; `test:commerce`
+(`tests/commerce/run.sh`) installs it into `vendor-commerce/` from a generated
+`composer.commerce.json` (all three gitignored), runs PHPStan over `src/` against Commerce's real
+classes, then the `commerce` suite with `AUDITOR_VENDOR=vendor-commerce` and `--no-redirect`. Run it
+on both PHP versions too; CI runs it as its own job.
 
 **Real-app testing during development uses the craft5 sandbox** (Sam, 30 Sep 2026) — a DDEV
 Craft 5 install at `~/projects/craft5` with real, upgraded content. The suites above stay the proof;
@@ -81,6 +88,8 @@ and only on an LLL branch (see §6).
 | Services (registered as components) | `src/services/` — `Recorder`, `Differ`, `Events` (query/read), `Retention` |
 | Watchers (event listeners, no DB writes) | `src/watchers/` — `ElementWatcher`, `AuthWatcher`, `CommerceWatcher` |
 | Row model, record | `src/models/Event.php`, `src/records/EventRecord.php` |
+| Pure helpers (no Craft state) | `src/helpers/` — `ItemDiff` |
+| Commerce knowledge | `src/watchers/CommerceWatcher.php` only — Commerce's classes named as strings, its tables read directly; attached only while Commerce is enabled |
 | Plugin events | `src/events/` |
 | Migrations | `src/migrations/` — `Install.php` **and** an idempotent create-table migration |
 | CP controllers | `src/controllers/` |
@@ -260,6 +269,29 @@ grep -rn '|raw\|raw(' src/templates/
 - **It hard-coded classes from Redactor, SEOmatic and a webdna field plugin** to flatten values.
   Field values are serialised by the field's own `serializeValue()`.
 
+### Craft Commerce (5.7.5, read 30 Sep 2026)
+
+- **An order writes its line items and adjustments in `Order::afterSave()`**, which Craft calls before
+  `EVENT_AFTER_SAVE_ELEMENT`, so a read of Commerce's tables in the after-save event sees the save.
+  Adjustments are deleted and inserted again under new ids whenever the order recalculates; a
+  completed order is locked to `RECALCULATION_MODE_NONE`.
+- **A cart's addresses are Address elements owned by the order** (`setPrimaryOwner()`), saved and
+  deleted inside the order's save. `setShippingAddress()` refuses an address the order does not own.
+- **A cart is not the only thing a shopper makes.** `Order::setEmail()` creates an inactive customer
+  **User** at once, outside the order's save; the first recalculation creates the store's location
+  **Address**, owned by nothing. Both are real elements, and a test that expects "no rows" from a cart
+  must make them first (`OrdersTest::_before()`).
+- **Commerce's `price` is the catalog price after pricing rules**; what a variant stores is
+  `basePrice` / `basePromotionalPrice` in `commerce_purchasables_stores`, per store. A site's store id
+  in `commerce_site_stores` may be null ("the primary store"), so ask the variant (`getStore()`).
+  **Stock is moved by inventory transactions**, never a save; a variant save only refreshes the
+  stored summary.
+- **`Product::setVariants()` does not mark `variants` dirty**, and Craft's nested-element manager saves
+  nested elements only when it is: a test making a product with variants calls
+  `setDirtyAttributes(['variants'])`, or the product saves with none.
+- **`Plugins::isPluginEnabled()` answers inside a plugin's `init()`**: `loadPlugins()` is guarded
+  against re-entry and the stored plugin list is read before any plugin loads.
+
 ### Tooling (sibling webdna harnesses)
 
 - **A cloned `Craft::$app->getDb()` is NOT a second connection under the harness.** With
@@ -303,6 +335,9 @@ grep -rn '|raw\|raw(' src/templates/
   fail with "Undefined constant".
 - **Codeception 5 reads `bootstrap:` at the top level of `codeception.yml`.** Under `settings:` it is
   silently ignored and Craft's constants are never defined.
+- **Codecept "redirects" itself to the vendor dir named in composer.json** ("Redirecting to
+  Composer-installed version in vendor/codeception"). Run from `vendor-commerce/` it silently switches
+  to the main install, which has no Commerce; the Commerce leg passes `--no-redirect`.
 - **`craftcms/phpstan` does not require PHPStan** — `phpstan/phpstan` is its own dev requirement.
 - **`composer validate` crashes with plugins loaded** ("$from (./vendor/craftcms) and $to (/app)
   must be absolute paths" from `craftcms/plugin-installer`) — use `--no-plugins`.
