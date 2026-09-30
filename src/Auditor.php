@@ -2,9 +2,15 @@
 
 namespace webdna\auditor;
 
+use Craft;
 use craft\base\Model;
 use craft\base\Plugin;
 use webdna\auditor\models\Settings;
+use webdna\auditor\services\Recorder;
+use yii\base\Application;
+use yii\base\Event;
+use yii\queue\ExecEvent;
+use yii\queue\Queue;
 
 /**
  * Auditor: one log of what changed on a Craft site, who changed it and from where, and of every
@@ -16,6 +22,7 @@ use webdna\auditor\models\Settings;
  * @since 1.0.0
  *
  * @method Settings getSettings()
+ * @property-read Recorder $recorder
  */
 class Auditor extends Plugin
 {
@@ -44,9 +51,56 @@ class Auditor extends Plugin
         ];
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    public static function config(): array
+    {
+        return [
+            'components' => [
+                'recorder' => Recorder::class,
+            ],
+        ];
+    }
+
     public function init(): void
     {
         parent::init();
+
+        $this->registerFlushes();
+    }
+
+    public function getRecorder(): Recorder
+    {
+        /** @var Recorder */
+        return $this->get('recorder');
+    }
+
+    /**
+     * The recorder's flush points (BR-3). Each asks whether the recorder was ever created, so a
+     * request that recorded nothing does no work here at all (BR-34).
+     */
+    private function registerFlushes(): void
+    {
+        Craft::$app->on(Application::EVENT_AFTER_REQUEST, function() {
+            if ($this->has('recorder', true)) {
+                $this->getRecorder()->flush();
+            }
+        });
+
+        // Class-level, so the queue component is not created just to listen to it.
+        Event::on(Queue::class, Queue::EVENT_BEFORE_EXEC, function(ExecEvent $event) {
+            if (is_object($event->job)) {
+                $this->getRecorder()->beginJob($event->job);
+            }
+        });
+        $endJob = function() {
+            if ($this->has('recorder', true)) {
+                $this->getRecorder()->endJob();
+            }
+        };
+        Event::on(Queue::class, Queue::EVENT_AFTER_EXEC, $endJob);
+        Event::on(Queue::class, Queue::EVENT_AFTER_ERROR, $endJob);
     }
 
     protected function createSettingsModel(): ?Model

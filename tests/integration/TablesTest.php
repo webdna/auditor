@@ -4,7 +4,6 @@ namespace webdna\auditor\tests\integration;
 
 use Codeception\Test\Unit;
 use Craft;
-use craft\db\Connection;
 use webdna\auditor\db\Table;
 use webdna\auditor\migrations\m260930_000000_create_tables;
 
@@ -17,6 +16,8 @@ use webdna\auditor\migrations\m260930_000000_create_tables;
  */
 class TablesTest extends Unit
 {
+    use SecondConnection;
+
     private const OLD_TABLE = '{{%auditor_log}}';
 
     public function testInstallCreatesBothTablesWithTheirColumns(): void
@@ -88,14 +89,5 @@ class TablesTest extends Unit
             (new m260930_000000_create_tables(['db' => $db]))->up();
             $db->close();
         }
-    }
-
-    private function secondConnection(): Connection
-    {
-        // Cloning drops the PDO handle and the transaction, so this opens a connection of its own.
-        $db = clone Craft::$app->getDb();
-        $db->open();
-
-        return $db;
     }
 }
