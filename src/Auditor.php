@@ -23,6 +23,7 @@ use webdna\auditor\services\Events;
 use webdna\auditor\services\Recorder;
 use webdna\auditor\services\Retention;
 use webdna\auditor\watchers\AuthWatcher;
+use webdna\auditor\watchers\CommerceWatcher;
 use webdna\auditor\watchers\ElementWatcher;
 use webdna\auditor\web\assets\log\LogAsset;
 use yii\base\Application;
@@ -127,6 +128,9 @@ class Auditor extends Plugin
 
         $elements = new ElementWatcher($this);
         $elements->attach();
+        if (CommerceWatcher::applies()) {
+            (new CommerceWatcher())->attach($elements);
+        }
         (new AuthWatcher($this))->attach();
         $this->registerFlushes($elements);
         $this->registerRetention();

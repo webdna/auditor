@@ -10,3 +10,5 @@ parameters:
         - tests/_craft/storage
         - tests/_output
         - tests/Support
+        # Needs Commerce, which vendor/ never has; analysed by tests/commerce/run.sh.
+        - tests/commerce

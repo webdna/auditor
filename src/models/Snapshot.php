@@ -17,6 +17,7 @@ class Snapshot
      * @param string[] $fields Handles of the candidate fields
      * @param array<string, mixed> $storedFields Stored value per candidate field; absent when nothing was stored
      * @param array<string, mixed> $storedAttributes Stored value per tracked attribute
+     * @param array<string, mixed> $extra What `EVENT_DEFINE_ELEMENT_SNAPSHOT` handlers read, by key (BR-24)
      */
     public function __construct(
         public readonly int $elementId,
@@ -24,6 +25,7 @@ class Snapshot
         public readonly array $fields,
         public readonly array $storedFields,
         public readonly array $storedAttributes,
+        public readonly array $extra = [],
     ) {
     }
 }

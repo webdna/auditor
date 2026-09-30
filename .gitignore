@@ -6,3 +6,6 @@
 .vscode
 /tests/Support/_generated
 /cpresources
+/vendor-commerce
+/composer.commerce.json
+/composer.commerce.lock

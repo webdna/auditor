@@ -1,0 +1,15 @@
+# Commerce leg (TS-10): Craft booted with Commerce installed, against the MySQL container. Run only
+# through tests/commerce/run.sh, which installs vendor-commerce/.
+actor: IntegrationTester
+suite_namespace: webdna\auditor\tests\commerce
+modules:
+  enabled:
+    - Asserts
+    - \craft\test\Craft:
+        plugins:
+          commerce:
+            class: '\craft\commerce\Plugin'
+            handle: commerce
+          auditor:
+            class: '\webdna\auditor\Auditor'
+            handle: auditor

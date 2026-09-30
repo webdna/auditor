@@ -20,6 +20,7 @@ use craft\helpers\Json;
 use DateTimeInterface;
 use Throwable;
 use webdna\auditor\Auditor;
+use webdna\auditor\events\DefineElementSnapshotEvent;
 use webdna\auditor\events\DefineTrackedAttributesEvent;
 use webdna\auditor\models\Settings;
 use webdna\auditor\models\Snapshot;
@@ -58,6 +59,12 @@ class Differ extends Component
      * Raised with a {@see DefineTrackedAttributesEvent} the first time an element type is diffed.
      */
     public const EVENT_DEFINE_TRACKED_ATTRIBUTES = 'defineTrackedAttributes';
+
+    /**
+     * Raised with a {@see DefineElementSnapshotEvent} before a save and again after it, so any code
+     * can add keys of its own to the element's row (BR-24). Only raised while someone listens.
+     */
+    public const EVENT_DEFINE_ELEMENT_SNAPSHOT = 'defineElementSnapshot';
 
     /**
      * Null means Craft's own connection — the one the element's rows were written on.
@@ -123,7 +130,14 @@ class Differ extends Component
             }
         }
 
-        return new Snapshot($element->id, $element->siteId, array_keys($fields), $storedFields, $storedAttributes);
+        $extra = [];
+        if ($this->hasEventHandlers(self::EVENT_DEFINE_ELEMENT_SNAPSHOT)) {
+            $event = new DefineElementSnapshotEvent(['element' => $element]);
+            $this->trigger(self::EVENT_DEFINE_ELEMENT_SNAPSHOT, $event);
+            $extra = $event->values;
+        }
+
+        return new Snapshot($element->id, $element->siteId, array_keys($fields), $storedFields, $storedAttributes, $extra);
     }
 
     /**
@@ -160,6 +174,11 @@ class Differ extends Component
             }
         }
 
+        // A handler that read nothing before the save has nothing to compare after it.
+        if ($before->extra !== []) {
+            $changes += $this->extraChanges($element, $before->extra);
+        }
+
         return $changes;
     }
 
@@ -189,6 +208,10 @@ class Differ extends Component
             if ($this->canonical($new) !== null) {
                 $values[$field->handle] = $this->entry($field->handle, $this->fieldLabel($field), null, $new);
             }
+        }
+
+        if ($this->hasEventHandlers(self::EVENT_DEFINE_ELEMENT_SNAPSHOT)) {
+            $values += $this->extraChanges($element, []);
         }
 
         return $values;
@@ -243,7 +266,7 @@ class Differ extends Component
     }
 
     /**
-     * BR-9's defaults for Craft's own element types. Commerce's are added by its watcher (6.1).
+     * BR-9's defaults for Craft's own element types. Commerce's are added by its watcher.
      *
      * @param class-string<ElementInterface> $elementType
      * @return array<string, string|Closure>
@@ -300,6 +323,47 @@ class Differ extends Component
             ],
             default => [],
         };
+    }
+
+    /**
+     * The keys `EVENT_DEFINE_ELEMENT_SNAPSHOT` handlers add, after the save (BR-24): each as its
+     * handler worded it, or compared as a field is. Redacted like everything else (BR-10).
+     *
+     * @param array<string, mixed> $before
+     * @return array<string, array<string, mixed>>
+     */
+    private function extraChanges(ElementInterface $element, array $before): array
+    {
+        $event = new DefineElementSnapshotEvent(['element' => $element, 'before' => $before]);
+        $this->trigger(self::EVENT_DEFINE_ELEMENT_SNAPSHOT, $event);
+
+        $changes = [];
+        foreach (array_keys($before + $event->values + $event->changes) as $key) {
+            $key = (string)$key;
+            if (array_key_exists($key, $event->changes)) {
+                $change = $event->changes[$key];
+                if ($change === []) {
+                    continue;
+                }
+                $label = (string)($change['label'] ?? $key);
+                if ($this->isRedacted($key)) {
+                    $changes[$key] = ['label' => $label, 'redacted' => true];
+                    continue;
+                }
+                // The labels of an item list's fields are words, not values: they are never redacted.
+                $words = array_intersect_key($change, ['label' => true, 'fields' => true]);
+                $changes[$key] = $words + $this->redact(array_diff_key($change, $words));
+                continue;
+            }
+
+            $old = $before[$key] ?? null;
+            $new = $event->values[$key] ?? null;
+            if ($this->canonical($old) !== $this->canonical($new)) {
+                $changes[$key] = $this->entry($key, $key, $old, $new);
+            }
+        }
+
+        return $changes;
     }
 
     /**

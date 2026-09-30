@@ -58,7 +58,8 @@
         "cs-fix": "ecs check --ansi --fix",
         "analyse": "phpstan analyse --memory-limit=1G --no-progress",
         "test:unit": "codecept run unit",
-        "test:integration": "codecept run integration"
+        "test:integration": "codecept run integration",
+        "test:commerce": "sh tests/commerce/run.sh"
     },
     "extra": {
         "name": "Auditor",

@@ -714,21 +714,28 @@ class Events extends Component
      * `details`, each a single value. Every value is already a string.
      *
      * A save's or a creation's fields are changes, keyed by handle; any other payload is flattened
-     * — an `{old, new}` pair anywhere in it is a change, and everything else a detail.
+     * — an `{old, new}` pair anywhere in it is a change, and everything else a detail. A save's list
+     * of items — an order's line items or adjustments (BR-23, BR-24) — is a `collection`: one table
+     * row per item added or removed, and one per field changed on an item.
      *
      * @return array{
      *     changes: list<array{key: string, label: string, old: string, new: string, redacted: bool}>,
      *     details: list<array{key: string, label: string, value: string, redacted: bool}>,
+     *     collections: list<array{key: string, label: string, rows: list<array{id: string, item: string, change: string, old: string, new: string, redacted: bool}>}>,
      * }
      */
     public function describe(Event $event): array
     {
-        $described = ['changes' => [], 'details' => []];
+        $described = ['changes' => [], 'details' => [], 'collections' => []];
         $data = $event->data ?? [];
 
         if ($event->family === Event::FAMILY_ELEMENT && in_array($event->event, [ElementWatcher::EVENT_SAVED, ElementWatcher::EVENT_CREATED], true)) {
             foreach ($data as $key => $entry) {
                 $entry = is_array($entry) ? $entry : [];
+                if (self::isCollection($entry)) {
+                    $described['collections'][] = $this->collection((string)$key, $entry);
+                    continue;
+                }
                 $described['changes'][] = [
                     'key' => (string)$key,
                     'label' => (string)($entry['label'] ?? $key),
@@ -748,6 +755,77 @@ class Events extends Component
         $this->flatten($data, '', '', $described);
 
         return $described;
+    }
+
+    /**
+     * @param array<array-key, mixed> $entry
+     */
+    private static function isCollection(array $entry): bool
+    {
+        return !array_key_exists('old', $entry) && !array_key_exists('new', $entry)
+            && (isset($entry['added']) || isset($entry['removed']) || isset($entry['changed']));
+    }
+
+    /**
+     * A list of items as table rows: each item added or removed with its values in one cell, each
+     * field changed on an item as a row of its own. Field labels are stored in English and shown
+     * translated.
+     *
+     * @param array<array-key, mixed> $entry
+     * @return array{key: string, label: string, rows: list<array{id: string, item: string, change: string, old: string, new: string, redacted: bool}>}
+     */
+    private function collection(string $key, array $entry): array
+    {
+        $fields = is_array($entry['fields'] ?? null) ? $entry['fields'] : [];
+        $fieldLabel = fn(string $name): string => Craft::t('auditor', (string)($fields[$name] ?? $name));
+        $collection = [
+            'key' => $key,
+            'label' => Craft::t('auditor', (string)($entry['label'] ?? $key)),
+            'rows' => [],
+        ];
+
+        $summary = function(mixed $values) use ($fieldLabel): string {
+            $lines = [];
+            foreach (is_array($values) ? $values : [] as $name => $value) {
+                $text = $value === ['redacted' => true]
+                    ? Craft::t('auditor', 'value not recorded')
+                    : $this->format($value);
+                if ($text !== '') {
+                    $lines[] = sprintf('%s: %s', $fieldLabel((string)$name), $text);
+                }
+            }
+            return implode("\n", $lines);
+        };
+
+        foreach (['added' => 'Added', 'removed' => 'Removed'] as $list => $change) {
+            foreach (is_array($entry[$list] ?? null) ? $entry[$list] : [] as $item) {
+                $text = $summary($item['values'] ?? []);
+                $collection['rows'][] = [
+                    'id' => (string)($item['id'] ?? ''),
+                    'item' => (string)($item['label'] ?? ''),
+                    'change' => Craft::t('auditor', $change),
+                    'old' => $list === 'removed' ? $text : '',
+                    'new' => $list === 'added' ? $text : '',
+                    'redacted' => false,
+                ];
+            }
+        }
+
+        foreach (is_array($entry['changed'] ?? null) ? $entry['changed'] : [] as $item) {
+            foreach (is_array($item['changes'] ?? null) ? $item['changes'] : [] as $name => $pair) {
+                $pair = is_array($pair) ? $pair : [];
+                $collection['rows'][] = [
+                    'id' => (string)($item['id'] ?? ''),
+                    'item' => (string)($item['label'] ?? ''),
+                    'change' => $fieldLabel((string)$name),
+                    'old' => $this->format($pair['old'] ?? null),
+                    'new' => $this->format($pair['new'] ?? null),
+                    'redacted' => ($pair['redacted'] ?? false) === true,
+                ];
+            }
+        }
+
+        return $collection;
     }
 
     /**
@@ -794,7 +872,7 @@ class Events extends Component
 
     /**
      * @param array<array-key, mixed> $data
-     * @param array{changes: list<array<string, mixed>>, details: list<array<string, mixed>>} $described
+     * @param array{changes: list<array<string, mixed>>, details: list<array<string, mixed>>, collections: list<array<string, mixed>>} $described
      */
     private function flatten(array $data, string $prefix, string $keyPrefix, array &$described): void
     {

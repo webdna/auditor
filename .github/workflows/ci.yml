@@ -40,3 +40,26 @@ jobs:
 
       - name: ECS, PHPStan, unit and integration suites
         run: docker compose run --rm php composer check
+
+  # The leg with Craft Commerce installed (TS-10, BR-23). The job above runs without it, which is
+  # what proves TN-14; this one installs it into its own vendor directory (tests/commerce/run.sh).
+  commerce:
+    name: commerce (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.4']
+    env:
+      PHP_VERSION: ${{ matrix.php }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the PHP image
+        run: docker compose build php
+
+      - name: Start MySQL
+        run: docker compose up -d --wait mysql
+
+      - name: PHPStan and the commerce suite, with Commerce installed
+        run: docker compose run --rm php composer test:commerce
