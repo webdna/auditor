@@ -8,6 +8,7 @@ use craft\base\Plugin;
 use webdna\auditor\models\Settings;
 use webdna\auditor\services\Differ;
 use webdna\auditor\services\Recorder;
+use webdna\auditor\watchers\AuthWatcher;
 use webdna\auditor\watchers\ElementWatcher;
 use yii\base\Application;
 use yii\base\Event;
@@ -73,6 +74,7 @@ class Auditor extends Plugin
 
         $elements = new ElementWatcher($this);
         $elements->attach();
+        (new AuthWatcher($this))->attach();
         $this->registerFlushes($elements);
     }
 
