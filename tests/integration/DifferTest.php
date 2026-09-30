@@ -345,6 +345,42 @@ class DifferTest extends Unit
     }
 
     /**
+     * A relation field with nothing in the content row — an element last saved before Craft 5.3,
+     * or before the field joined its layout — takes its stored ids from the `relations` table, as
+     * Craft does. Found on a real upgraded site: without it, the first save of every such element
+     * logs each relation field as newly added.
+     */
+    public function testARelationMissingFromContentIsReadFromTheRelationsTable(): void
+    {
+        $first = $this->site->entry('First');
+        $second = $this->site->entry('Second');
+        $entry = $this->site->entry('Related', ['related' => [$first->id, $second->id], 'plainText' => 'Kept']);
+        $uid = $this->site->page->getFieldLayout()->getFieldByHandle('plainText')?->layoutElement?->uid;
+        $this->assertIsString($uid);
+        // Only the plain text survives in content; the relation is left in `relations` alone.
+        Craft::$app->getDb()->createCommand()->update(
+            CraftTable::ELEMENTS_SITES,
+            ['content' => [$uid => 'Kept']],
+            ['elementId' => $entry->id],
+        )->execute();
+
+        $reposted = $this->fresh($entry);
+        $reposted->setFieldValue('related', [$first->id, $second->id]);
+        $this->assertSame([], $this->saveAndDiff($reposted), 'The relation did not change');
+
+        $changed = $this->fresh($entry);
+        Craft::$app->getDb()->createCommand()->update(
+            CraftTable::ELEMENTS_SITES,
+            ['content' => [$uid => 'Kept']],
+            ['elementId' => $entry->id],
+        )->execute();
+        $changed->setFieldValue('related', [$second->id]);
+        $diff = $this->saveAndDiff($changed);
+        $this->assertSame([(int)$first->id, (int)$second->id], $diff['related']['old'] ?? null);
+        $this->assertSame([(int)$second->id], $diff['related']['new'] ?? null);
+    }
+
+    /**
      * BR-35: an entry's snapshot is one read of its rows plus one of its authors; a user's is one;
      * an element with no candidates reads nothing.
      */
