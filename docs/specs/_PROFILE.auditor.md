@@ -52,7 +52,14 @@ craft5 is where a task is also exercised against data the harness cannot fake. A
 bind-mounted into it (`.ddev/docker-compose.auditor.yaml` there → `plugins/auditor`), required
 through its `plugins/*` path repository (a symlink, so it is always the live checkout) and installed.
 Drive it with a throwaway script under craft5's `storage/` that boots the console app, then read
-`auditor_events` with `ddev mysql`; delete the script afterwards. **Run `ddev` there from
+`auditor_events` with `ddev mysql`; delete the script afterwards. **A control-panel request** runs
+the same way through `bootstrap/web.php` (task 4.1): set `$_SERVER` and `$_GET` (an action goes in
+the `action` query parameter — a path under `admin/actions/` 404s from the CLI), then
+`setIsConsoleRequest(false)`, the plugin's `controllerNamespace` set to its web controllers (it was
+set while the request still looked like the CLI), `enableSession = false` + `setIdentity()`, and
+`handleRequest()` → `STATE_SENDING_RESPONSE` → `send()` inside an output buffer. The edition can be
+set on the plugin in memory, so Pro is exercised without touching craft5's project config. Run
+`ddev mutagen sync` after writing a script, or the container does not see it yet. **Run `ddev` there from
 `/Users/samuelbirch/projects/craft5` (lowercase p)** — that is the root DDEV registered, and from
 `~/Projects` a restart stops the project and then refuses to start it. Do not commit in craft5;
 it carries other plugins' uncommitted work.
@@ -213,6 +220,14 @@ grep -rn '|raw\|raw(' src/templates/
   `hasCpSection` — and only a plugin with a CP section gets that permission registered. So
   "Access Auditor" is the log's permission. Action requests skip that check; a controller must
   make it itself (task 3.1).
+- **An element's action menu is `Element::EVENT_DEFINE_ACTION_MENU_ITEMS`, fired on every element
+  type's edit screen and slideout** (`base/Element.php:4131`); a button item's `attributes` land on
+  its `<button>` and a click on it bubbles to the document. The edit screen usually holds a
+  provisional draft — name `getCanonicalId()`. Craft drops the menu for an element without an id.
+- **A component's default `displayName()` is its class's short name** ("SetStatus"), and a queue job
+  has no `displayName()` at all, so neither is fit to show as words (task 4.1, found on craft5).
+- **`UserPermissions::getAllPermissions()` memoises its list**, so a test that changes what is
+  registered (an edition) reads it from a `new UserPermissions()`.
 - **`Cp::nav()` makes every item's `url` absolute** (`web/twig/variables/Cp.php:404`) — compare
   with `UrlHelper::cpUrl()`, not the handle.
 
