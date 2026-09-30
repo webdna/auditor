@@ -100,6 +100,34 @@
         </table>
     {% endif %}
 
+    {% for collection in described.collections %}
+        <h3>{{ collection.label }}</h3>
+        <table class="data fullwidth auditor-changes" data-auditor-field="{{ collection.key }}">
+            <thead>
+                <tr>
+                    <th scope="col">{{ 'Item'|t('auditor') }}</th>
+                    <th scope="col">{{ 'Change'|t('auditor') }}</th>
+                    <th scope="col">{{ 'Before'|t('auditor') }}</th>
+                    <th scope="col">{{ 'After'|t('auditor') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in collection.rows %}
+                    <tr data-auditor-item="{{ row.id }}">
+                        <th scope="row">{{ row.item }}</th>
+                        <td>{{ row.change }}</td>
+                        {% if row.redacted %}
+                            <td colspan="2">{{ redacted }}</td>
+                        {% else %}
+                            <td>{{ _self.value(row.old) }}</td>
+                            <td>{{ _self.value(row.new) }}</td>
+                        {% endif %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endfor %}
+
     {% if described.details is not empty %}
         <h3>{{ 'Details'|t('auditor') }}</h3>
         <dl class="auditor-facts auditor-payload">

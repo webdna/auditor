@@ -2,6 +2,7 @@
 
 namespace webdna\auditor\watchers;
 
+use Closure;
 use Craft;
 use craft\base\ElementInterface;
 use craft\base\NestedElementInterface;
@@ -86,9 +87,27 @@ class ElementWatcher
      */
     private array $batches = [];
 
+    /**
+     * Tests another watcher adds for elements the log never holds, such as a shop's carts (BR-23).
+     *
+     * @var list<Closure(ElementInterface): bool>
+     */
+    private array $ignores = [];
+
     public function __construct(private readonly Auditor $plugin)
     {
         $this->snapshots = new WeakMap();
+    }
+
+    /**
+     * Adds a test for elements whose events are never recorded. It is asked about every element
+     * event before anything is read, so it must cost no query.
+     *
+     * @param Closure(ElementInterface): bool $test
+     */
+    public function ignore(Closure $test): void
+    {
+        $this->ignores[] = $test;
     }
 
     public function attach(): void
@@ -305,6 +324,12 @@ class ElementWatcher
         // Follows a nested element's owners, so a block inside a draft is a draft's.
         if (ElementHelper::isDraftOrRevision($element)) {
             return true;
+        }
+
+        foreach ($this->ignores as $test) {
+            if ($test($element)) {
+                return true;
+            }
         }
 
         return !$this->plugin->getRecorder()->isRecording();

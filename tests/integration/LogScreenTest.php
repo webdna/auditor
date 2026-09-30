@@ -299,11 +299,45 @@ class LogScreenTest extends Unit
         $redacted = $this->describe(['family' => Event::FAMILY_AUTH, 'event' => AuthWatcher::EVENT_LOGIN_FAILED, 'data' => ['username' => 'x', 'password' => ['redacted' => true]]]);
         $this->assertTrue($redacted['details'][1]['redacted']);
 
+        // A list of items (an order's line items, BR-23): a row per item added or removed, a row
+        // per field changed, labels from the entry, a redacted value in words.
+        $order = $this->describe(['data' => [
+            'email' => ['label' => 'Email', 'old' => 'a@example.com', 'new' => 'b@example.com'],
+            'lineItems' => [
+                'label' => 'Line items',
+                'fields' => ['qty' => 'Quantity', 'note' => 'Note'],
+                'added' => [['id' => 3, 'label' => 'Scarf', 'values' => ['qty' => 2, 'note' => ['redacted' => true]]]],
+                'removed' => [['id' => 2, 'label' => 'Cap', 'values' => ['qty' => 1, 'note' => null]]],
+                'changed' => [['id' => 1, 'label' => 'Boot', 'changes' => ['qty' => ['old' => 1, 'new' => 3]]]],
+            ],
+        ]]);
+        $this->assertSame(['email'], array_column($order['changes'], 'key'), 'the list is not a field change');
+        $this->assertSame([
+            ['id' => '3', 'item' => 'Scarf', 'change' => 'Added', 'old' => '', 'new' => "Quantity: 2\nNote: value not recorded", 'redacted' => false],
+            ['id' => '2', 'item' => 'Cap', 'change' => 'Removed', 'old' => 'Quantity: 1', 'new' => '', 'redacted' => false],
+            ['id' => '1', 'item' => 'Boot', 'change' => 'Quantity', 'old' => '1', 'new' => '3', 'redacted' => false],
+        ], $order['collections'][0]['rows']);
+        $this->assertSame('Line items', $order['collections'][0]['label']);
+
         // And they render: each change and detail carries its test hook.
         $id = $this->insert(['family' => Event::FAMILY_ACCESS, 'event' => AuthWatcher::EVENT_GROUP_SAVED, 'data' => ['group' => ['name' => 'Editors'], 'changes' => ['name' => ['old' => 'Writers', 'new' => 'Editors']]]]);
         $detail = $this->view($this->admin, $id);
         $this->assertStringContainsString('data-auditor-field="changes.name"', $detail);
         $this->assertStringContainsString('data-auditor-field="group"', $detail);
+
+        // A list of items renders as its own table, escaped like every value (BR-30).
+        $id = $this->insert(['event' => ElementWatcher::EVENT_SAVED, 'data' => ['lineItems' => [
+            'label' => 'Line items',
+            'fields' => ['qty' => 'Quantity'],
+            'added' => [],
+            'removed' => [['id' => 2, 'label' => '<script>alert(1)</script>', 'values' => ['qty' => 1]]],
+            'changed' => [['id' => 1, 'label' => 'Boot', 'changes' => ['qty' => ['old' => 1, 'new' => 3]]]],
+        ]]]);
+        $detail = $this->view($this->admin, $id);
+        $this->assertStringContainsString('data-auditor-field="lineItems"', $detail);
+        $this->assertStringContainsString('data-auditor-item="1"', $detail);
+        $this->assertStringContainsString('&lt;script&gt;alert(1)&lt;/script&gt;', $detail);
+        $this->assertStringNotContainsString('<script>alert(1)', $detail);
     }
 
     /**
@@ -368,7 +402,7 @@ class LogScreenTest extends Unit
 
     /**
      * @param array<string, mixed> $attributes
-     * @return array{changes: list<array<string, mixed>>, details: list<array<string, mixed>>}
+     * @return array{changes: list<array<string, mixed>>, details: list<array<string, mixed>>, collections: list<array<string, mixed>>}
      */
     private function describe(array $attributes): array
     {

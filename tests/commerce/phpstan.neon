@@ -1,0 +1,12 @@
+# The Commerce leg's analysis (tests/commerce/run.sh): src/ against Commerce's real classes, plus
+# this leg's tests, which the main analysis excludes because vendor/ has no Commerce.
+includes:
+    - ../../vendor-commerce/craftcms/phpstan/phpstan.neon
+
+parameters:
+    level: 6
+    paths:
+        - ../../src
+        - .
+    excludePaths:
+        - run.sh

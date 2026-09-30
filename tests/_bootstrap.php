@@ -11,7 +11,8 @@ define('CRAFT_TEMPLATES_PATH', __DIR__ . '/_craft/templates');
 define('CRAFT_CONFIG_PATH', __DIR__ . '/_craft/config');
 define('CRAFT_MIGRATIONS_PATH', __DIR__ . '/_craft/migrations');
 define('CRAFT_TRANSLATIONS_PATH', __DIR__ . '/_craft/translations');
-define('CRAFT_VENDOR_PATH', dirname(__DIR__) . '/vendor');
+// The Commerce leg (tests/commerce/run.sh) installs into its own vendor directory.
+define('CRAFT_VENDOR_PATH', dirname(__DIR__) . '/' . (getenv('AUDITOR_VENDOR') ?: 'vendor'));
 
 $devMode = true;
 
