@@ -1,0 +1,13 @@
+# Benchmark tier (TS-12 step 3): run only through tests/bench/resave.php, never in CI — timing is
+# noisy there. No per-test transaction: a resave commits as it would on a site, so the recorder's
+# rows are written by its flush and their insert is part of what is timed. (Set under `config:`:
+# an inline setting on the `enabled:` entry loses to codeception.yml's `transaction: true`.)
+actor: IntegrationTester
+suite_namespace: webdna\auditor\tests\bench
+modules:
+  enabled:
+    - Asserts
+    - \craft\test\Craft
+  config:
+    \craft\test\Craft:
+      transaction: false

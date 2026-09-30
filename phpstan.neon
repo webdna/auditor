@@ -9,6 +9,6 @@ parameters:
     excludePaths:
         - tests/_craft/storage
         - tests/_output
-        - tests/Support
+        - tests/Support/_generated
         # Needs Commerce, which vendor/ never has; analysed by tests/commerce/run.sh.
         - tests/commerce

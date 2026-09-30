@@ -1,0 +1,10 @@
+{# A front-end page for TS-12 step 1: element queries, custom fields, relations and the visitor. #}
+<h1>{{ currentUser ? currentUser.username : 'Guest' }}</h1>
+<ul>
+    {% for entry in craft.entries.section('pages').status(null).all() %}
+        <li>
+            {{ entry.title }} · {{ entry.plainText }} · {{ entry.number }}
+            {% for related in entry.related.all() %}{{ related.title }}{% endfor %}
+        </li>
+    {% endfor %}
+</ul>
