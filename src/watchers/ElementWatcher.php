@@ -5,14 +5,18 @@ namespace webdna\auditor\watchers;
 use Craft;
 use craft\base\ElementInterface;
 use craft\base\NestedElementInterface;
+use craft\events\BulkOpEvent;
+use craft\events\ElementActionEvent;
 use craft\events\ElementEvent;
 use craft\events\MoveElementEvent;
 use craft\helpers\ElementHelper;
+use craft\queue\BaseBatchedElementJob;
 use craft\services\Elements;
 use craft\services\Structures;
 use Throwable;
 use WeakMap;
 use webdna\auditor\Auditor;
+use webdna\auditor\models\Batch;
 use webdna\auditor\models\Event;
 use webdna\auditor\models\Snapshot;
 use yii\base\Event as YiiEvent;
@@ -32,6 +36,15 @@ use yii\base\Event as YiiEvent;
  * A nested element's row carries its owner (BR-12); it shares the owner's request id because the
  * recorder gives every row of a request the same one.
  *
+ * **Batches** (BR-13, BR-14, BR-15). An element-index action on more than one element and a run of a
+ * batched element job are batches from the start: no element in them is snapshotted or diffed, and
+ * one `bulk` row listing them is recorded when the operation ends. Every other outermost Craft bulk
+ * operation is a candidate — Craft opens one around every single save — whose rows are recorded as
+ * usual until one of its saves is a resave, or it touches more than `bulkThreshold` top-level
+ * elements; then those rows are dropped and the batch row stands for them. A nested element counts
+ * as its owner and is listed through it, however many of the owner's it saves. A job Craft splits over several queue runs is one
+ * batch row per run. With `recordBulkDiffs` on there are no batches at all.
+ *
  * Every listener is class-level, so the plugin creates nothing until an element event happens, and
  * every one swallows its own failures (BR-2).
  *
@@ -44,6 +57,18 @@ class ElementWatcher
     public const EVENT_DELETED = 'deleted';
     public const EVENT_RESTORED = 'restored';
     public const EVENT_MOVED = 'moved';
+    public const EVENT_BULK = 'bulk';
+
+    /**
+     * The operation a candidate batch is named after: what its first element went through.
+     */
+    private const OPERATIONS = [
+        self::EVENT_CREATED => 'create',
+        self::EVENT_SAVED => 'save',
+        self::EVENT_DELETED => 'delete',
+        self::EVENT_RESTORED => 'restore',
+        self::EVENT_MOVED => 'move',
+    ];
 
     /**
      * Snapshots of saves in progress, innermost last: an element can be saved again while its own
@@ -53,6 +78,14 @@ class ElementWatcher
      */
     private WeakMap $snapshots;
 
+    /**
+     * Open batches, innermost last. Only the innermost collects; a job run inside another operation
+     * is the one batch that opens inside another.
+     *
+     * @var list<Batch>
+     */
+    private array $batches = [];
+
     public function __construct(private readonly Auditor $plugin)
     {
         $this->snapshots = new WeakMap();
@@ -60,6 +93,10 @@ class ElementWatcher
 
     public function attach(): void
     {
+        YiiEvent::on(Elements::class, Elements::EVENT_BEFORE_BULK_OP, [$this, 'beforeBulkOp']);
+        YiiEvent::on(Elements::class, Elements::EVENT_AFTER_BULK_OP, [$this, 'afterBulkOp']);
+        YiiEvent::on(Elements::class, Elements::EVENT_BEFORE_PERFORM_ACTION, [$this, 'beforeAction']);
+        YiiEvent::on(Elements::class, Elements::EVENT_AFTER_PERFORM_ACTION, [$this, 'afterAction']);
         YiiEvent::on(Elements::class, Elements::EVENT_BEFORE_SAVE_ELEMENT, [$this, 'beforeSave']);
         YiiEvent::on(Elements::class, Elements::EVENT_AFTER_SAVE_ELEMENT, [$this, 'afterSave']);
         YiiEvent::on(Elements::class, Elements::EVENT_AFTER_DELETE_ELEMENT, [$this, 'afterDelete']);
@@ -70,6 +107,78 @@ class ElementWatcher
         YiiEvent::on(Structures::class, 'afterMoveElement', [$this, 'afterMove']);
     }
 
+    /**
+     * An outermost Craft bulk operation opens a candidate batch. A nested one — Craft begins one
+     * inside another only when asked outright — belongs to the operation already open.
+     */
+    public function beforeBulkOp(BulkOpEvent $event): void
+    {
+        try {
+            if ($this->batches === [] && $this->batching()) {
+                $this->batches[] = new Batch($event->key);
+            }
+        } catch (Throwable $e) {
+            $this->fail('Could not follow a bulk operation', $e);
+        }
+    }
+
+    public function afterBulkOp(BulkOpEvent $event): void
+    {
+        $this->close($event->key);
+    }
+
+    /**
+     * An element-index action on more than one element is a batch. On one it is recorded as that
+     * element's own event, which says more than "a batch of one".
+     */
+    public function beforeAction(ElementActionEvent $event): void
+    {
+        try {
+            if ($this->batches === [] && $this->batching() && count((array)$event->criteria->id) > 1) {
+                $this->batches[] = new Batch(Batch::ACTION, $event->action::class, true);
+            }
+        } catch (Throwable $e) {
+            $this->fail('Could not follow an element action', $e);
+        }
+    }
+
+    public function afterAction(ElementActionEvent $event): void
+    {
+        $this->close(Batch::ACTION);
+    }
+
+    /**
+     * Called as a queue job starts, after the recorder's own: a run of a batched element job is a batch.
+     */
+    public function beginJob(object $job): void
+    {
+        try {
+            if ($job instanceof BaseBatchedElementJob && $this->batching()) {
+                $this->batches[] = new Batch(Batch::JOB, $job::class, true);
+            }
+        } catch (Throwable $e) {
+            $this->fail('Could not follow a queue job', $e);
+        }
+    }
+
+    /**
+     * Called as a queue job ends, before the recorder's own, so the batch row is the job's.
+     */
+    public function endJob(): void
+    {
+        $this->close(Batch::JOB);
+    }
+
+    /**
+     * Ends whatever is still open — an action whose after event never came — as the request ends.
+     */
+    public function closeAll(): void
+    {
+        while ($this->batches !== []) {
+            $this->close($this->batches[array_key_last($this->batches)]->key);
+        }
+    }
+
     public function beforeSave(ElementEvent $event): void
     {
         try {
@@ -78,8 +187,11 @@ class ElementWatcher
                 return;
             }
 
-            // A first save has no stored state worth reading: it is recorded as created.
-            $snapshot = $this->isCreation($event) ? null : $this->plugin->getDiffer()->snapshot($element);
+            // A first save has no stored state worth reading: it is recorded as created. Nor has a
+            // save inside a batch, which is never diffed (B3).
+            $batch = $this->batch();
+            $batched = $batch !== null && ($batch->definite || $element->resaving);
+            $snapshot = $batched || $this->isCreation($event) ? null : $this->plugin->getDiffer()->snapshot($element);
             $stack = $this->snapshots[$element] ?? [];
             $stack[] = $snapshot;
             $this->snapshots[$element] = $stack;
@@ -97,9 +209,14 @@ class ElementWatcher
                 return;
             }
 
+            $creation = $this->isCreation($event);
+            if ($this->absorbs($element, $creation ? self::EVENT_CREATED : self::EVENT_SAVED)) {
+                return;
+            }
+
             $differ = $this->plugin->getDiffer();
 
-            if ($this->isCreation($event)) {
+            if ($creation) {
                 $this->record($element, self::EVENT_CREATED, $differ->created($element) ?: null);
                 return;
             }
@@ -124,7 +241,7 @@ class ElementWatcher
     {
         try {
             $element = $event->element;
-            if ($this->skips($element)) {
+            if ($this->skips($element) || $this->absorbs($element, self::EVENT_DELETED)) {
                 return;
             }
 
@@ -137,8 +254,9 @@ class ElementWatcher
     public function afterRestore(ElementEvent $event): void
     {
         try {
-            if (!$this->skips($event->element)) {
-                $this->record($event->element, self::EVENT_RESTORED);
+            $element = $event->element;
+            if (!$this->skips($element) && !$this->absorbs($element, self::EVENT_RESTORED)) {
+                $this->record($element, self::EVENT_RESTORED);
             }
         } catch (Throwable $e) {
             $this->fail('Could not record an element restore', $e);
@@ -150,7 +268,7 @@ class ElementWatcher
         try {
             $element = $event->element;
             // Placing a new element is part of its creation, not a move.
-            if ($element->firstSave || $this->skips($element)) {
+            if ($element->firstSave || $this->skips($element) || $this->absorbs($element, self::EVENT_MOVED)) {
                 return;
             }
 
@@ -192,6 +310,95 @@ class ElementWatcher
         return !$this->plugin->getRecorder()->isRecording();
     }
 
+    /**
+     * Whether an operation may become a batch: not when recording is off, nor when batches are
+     * recorded element by element (BR-14).
+     */
+    private function batching(): bool
+    {
+        $settings = $this->plugin->getSettings();
+
+        return $settings->enabled && !$settings->recordBulkDiffs;
+    }
+
+    /**
+     * The batch collecting now, if any.
+     */
+    private function batch(): ?Batch
+    {
+        return $this->batches === [] ? null : $this->batches[array_key_last($this->batches)];
+    }
+
+    /**
+     * Hands an element's event to the open batch, and says whether the batch stands for it — in
+     * which case the element records no row of its own.
+     */
+    private function absorbs(ElementInterface $element, string $event): bool
+    {
+        $batch = $this->batch();
+        if ($batch === null) {
+            return false;
+        }
+
+        if ($element->resaving) {
+            $this->settle($batch, Batch::OPERATION_RESAVE);
+        }
+
+        // A nested element counts toward its owner, not the total (BR-13): it covers the owner, so a
+        // resave of one field's nested entries still lists what they belong to.
+        $ownerId = $element instanceof NestedElementInterface ? $element->getOwnerId() : null;
+        if (
+            $batch->cover($ownerId ?? (int)$element->id, (int)$element->siteId, $element::class, self::OPERATIONS[$event]) &&
+            $batch->count() > $this->plugin->getSettings()->bulkThreshold
+        ) {
+            $this->settle($batch);
+        }
+
+        return $batch->definite;
+    }
+
+    /**
+     * Makes a candidate a batch: the rows already recorded for it are dropped (BR-14).
+     */
+    private function settle(Batch $batch, ?string $operation = null): void
+    {
+        if ($batch->definite) {
+            return;
+        }
+
+        $batch->definite = true;
+        $batch->operation = $operation ?? $batch->operation;
+        $this->plugin->getRecorder()->discard($batch->id);
+    }
+
+    /**
+     * Ends the innermost batch if it is the one named, recording its row when it is a batch that
+     * covered anything.
+     */
+    private function close(string $key): void
+    {
+        try {
+            $batch = $this->batch();
+            if ($batch === null || $batch->key !== $key) {
+                return;
+            }
+
+            array_pop($this->batches);
+            if (!$batch->definite || $batch->count() === 0) {
+                return;
+            }
+
+            $this->plugin->getRecorder()->record(new Event([
+                'family' => Event::FAMILY_ELEMENT,
+                'event' => self::EVENT_BULK,
+                'data' => $batch->data(),
+                'elements' => $batch->elements(),
+            ]));
+        } catch (Throwable $e) {
+            $this->fail('Could not record a batch', $e);
+        }
+    }
+
     private function isCreation(ElementEvent $event): bool
     {
         return $event->isNew || $event->element->firstSave;
@@ -228,6 +435,8 @@ class ElementWatcher
             'elementLabel' => $this->label($element),
             'ownerId' => $element instanceof NestedElementInterface ? $element->getOwnerId() : null,
             'data' => $data,
+            // Only a candidate is left open here: a batch would have absorbed the event.
+            'batch' => $this->batch()?->id,
         ]));
     }
 
