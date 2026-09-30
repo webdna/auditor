@@ -51,8 +51,12 @@ Craft 5 install at `~/projects/craft5` with real, upgraded content. The suites a
 craft5 is where a task is also exercised against data the harness cannot fake. Auditor is
 bind-mounted into it (`.ddev/docker-compose.auditor.yaml` there → `plugins/auditor`), required
 through its `plugins/*` path repository (a symlink, so it is always the live checkout) and installed.
-Drive it with a throwaway script under craft5's `storage/` that boots the console app, then read
-`auditor_events` with `ddev mysql`; delete the script afterwards. **A control-panel request** runs
+Drive it with a throwaway script under craft5's `storage/` that boots the console app — craft5 has no
+`bootstrap/` folder, so `require dirname(__DIR__) . '/bootstrap.php'` then
+`CRAFT_VENDOR_PATH . '/craftcms/cms/bootstrap/console.php'`, and call the recorder's `flush()` yourself,
+because a script never ends a request — then read `auditor_events` with `ddev mysql`; delete the script
+afterwards. Never run `craft gc` there to test pruning: it also purges craft5's old trashed content;
+trigger `Gc::EVENT_RUN` from the script instead (task 5.1). **A control-panel request** runs
 the same way through `bootstrap/web.php` (task 4.1): set `$_SERVER` and `$_GET` (an action goes in
 the `action` query parameter — a path under `admin/actions/` 404s from the CLI), then
 `setIsConsoleRequest(false)`, the plugin's `controllerNamespace` set to its web controllers (it was
@@ -236,6 +240,11 @@ grep -rn '|raw\|raw(' src/templates/
   and `myaccount/<screen>` for oneself, so both need a CP rule. `asEditUserScreen()` refuses a
   screen id the event did not add, and adds a "Save and continue editing" alt action to every
   screen but Profile — clear it on a screen with nothing to save.
+- **`craft help` prints a console controller's class docblock and each option's `@var` text to the
+  customer.** Keep spec rule ids and internal notes out of them (task 5.1).
+- **A soft user deletion leaves their entries alone.** `users/delete --delete-content` only confirms
+  consent; the entries go when the user is hard-deleted. A test of "deleting a user" sees no entry
+  deletion rows.
 - **`Cp::nav()` makes every item's `url` absolute** (`web/twig/variables/Cp.php:404`) — compare
   with `UrlHelper::cpUrl()`, not the handle.
 
