@@ -198,6 +198,16 @@ class Recorder extends Component
     }
 
     /**
+     * Whether a row is still buffered, so a watcher can add to it what the same change reports in
+     * a second event (a user group's permissions, saved after the group). A row already written
+     * is never changed (BR-1).
+     */
+    public function holds(Event $row): bool
+    {
+        return in_array($row, $this->ready, true) || in_array($row, $this->pending, true);
+    }
+
+    /**
      * Rows held for a transaction that has not yet committed. For tests.
      *
      * @return Event[]
