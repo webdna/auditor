@@ -11,16 +11,19 @@ use craft\db\Query;
 use craft\db\Table;
 use craft\elements\User;
 use craft\events\ConfigEvent;
+use craft\events\ElementEvent;
 use craft\events\LoginFailureEvent;
 use craft\events\UserEvent;
 use craft\events\UserGroupEvent;
 use craft\events\UserGroupsAssignEvent;
 use craft\events\UserPermissionsEvent;
+use craft\helpers\ElementHelper;
 use craft\helpers\Session;
 use craft\models\UserGroup;
 use craft\records\Authenticator as AuthenticatorRecord;
 use craft\records\User as UserRecord;
 use craft\records\WebAuthn as WebAuthnRecord;
+use craft\services\Elements;
 use craft\services\ProjectConfig;
 use craft\services\UserGroups;
 use craft\services\UserPermissions;
@@ -195,6 +198,7 @@ class AuthWatcher
             YiiEvent::on(ProjectConfig::class, $name, [$this, 'configChanged']);
         }
         YiiEvent::on(UserGroups::class, UserGroups::EVENT_AFTER_DELETE_USER_GROUP, [$this, 'groupDeleted']);
+        YiiEvent::on(Elements::class, Elements::EVENT_AFTER_DELETE_ELEMENT, [$this, 'userDeleted']);
 
         YiiEvent::on(AuthenticatorRecord::class, BaseActiveRecord::EVENT_AFTER_INSERT, [$this, 'authenticatorSaved']);
         YiiEvent::on(AuthenticatorRecord::class, BaseActiveRecord::EVENT_AFTER_UPDATE, [$this, 'authenticatorSaved']);
@@ -481,6 +485,24 @@ class AuthWatcher
             $this->recordRow($this->groupEvent(self::EVENT_GROUP_DELETED, $event->userGroup, []));
         } catch (Throwable $e) {
             $this->fail('Could not record a deleted user group', $e);
+        }
+    }
+
+    /**
+     * A user deleted — to the trash or for good: their name comes out of the log's rows once the
+     * deletion commits (BR-26). The deletion itself is recorded by the element watcher, under the
+     * user's label. Craft's garbage collection purges a trashed user without any event, which is
+     * why the trashing is the moment, and a user restored from the trash stays anonymised.
+     */
+    public function userDeleted(ElementEvent $event): void
+    {
+        try {
+            $user = $event->element;
+            if ($user instanceof User && $user->id && !ElementHelper::isDraftOrRevision($user)) {
+                $this->plugin->getRecorder()->anonymiseActor((int)$user->id);
+            }
+        } catch (Throwable $e) {
+            $this->fail('Could not take a deleted user out of the log', $e);
         }
     }
 

@@ -73,6 +73,16 @@ class Recorder extends Component
      */
     private ?string $job = null;
 
+    /**
+     * @var int[] Deleted users whose rows wait for the outermost transaction to commit (BR-26).
+     */
+    private array $pendingActors = [];
+
+    /**
+     * @var int[] Deleted users whose rows the next flush rewrites.
+     */
+    private array $readyActors = [];
+
     private bool $listening = false;
 
     private bool $backstop = false;
@@ -142,7 +152,7 @@ class Recorder extends Component
      */
     public function flush(): void
     {
-        if ($this->ready === []) {
+        if ($this->ready === [] && $this->readyActors === []) {
             return;
         }
 
@@ -158,18 +168,42 @@ class Recorder extends Component
             $batches = array_filter($rows, fn(Event $row) => $row->elements !== []);
             if ($batches === []) {
                 $this->insertRows($db, $rows);
-                return;
+            } else {
+                $db->transaction(function() use ($db, $rows, $batches) {
+                    $this->insertRows($db, array_filter($rows, fn(Event $row) => $row->elements === []));
+                    foreach ($batches as $row) {
+                        $this->insertBatch($db, $row);
+                    }
+                });
             }
-
-            $db->transaction(function() use ($db, $rows, $batches) {
-                $this->insertRows($db, array_filter($rows, fn(Event $row) => $row->elements === []));
-                foreach ($batches as $row) {
-                    $this->insertBatch($db, $row);
-                }
-            });
         } catch (Throwable $e) {
             $this->ready = [];
             $this->fail('Could not write the log’s rows', $e);
+        }
+
+        $this->rewriteActors();
+    }
+
+    /**
+     * Takes a deleted user's name out of the log (BR-26) once the deletion commits, and after the
+     * rows this request recorded are written — the user's own among them — so none escapes.
+     *
+     * Not bound by the recording settings: a user deleted where nothing is recorded still has
+     * their name removed from the rows recorded elsewhere.
+     */
+    public function anonymiseActor(int $userId): void
+    {
+        try {
+            $this->backstop();
+            $db = $this->getDb();
+            if ($db->getTransaction() === null) {
+                $this->readyActors[] = $userId;
+                return;
+            }
+            $this->listen($db);
+            $this->pendingActors[] = $userId;
+        } catch (Throwable $e) {
+            $this->fail('Could not take a deleted user out of the log', $e);
         }
     }
 
@@ -323,29 +357,66 @@ class Recorder extends Component
     private function buffer(Event $row): void
     {
         $db = $this->getDb();
-
-        if (!$this->backstop) {
-            $this->backstop = true;
-            register_shutdown_function([$this, 'flush']);
-        }
+        $this->backstop();
 
         if ($db->getTransaction() === null) {
             $this->ready[] = $row;
             return;
         }
 
-        if (!$this->listening) {
-            $this->listening = true;
-            $db->on(Connection::EVENT_COMMIT_TRANSACTION, function() {
-                array_push($this->ready, ...$this->pending);
-                $this->pending = [];
-            });
-            $db->on(Connection::EVENT_ROLLBACK_TRANSACTION, function() {
-                $this->pending = [];
-            });
+        $this->listen($db);
+        $this->pending[] = $row;
+    }
+
+    private function backstop(): void
+    {
+        if (!$this->backstop) {
+            $this->backstop = true;
+            register_shutdown_function([$this, 'flush']);
+        }
+    }
+
+    /**
+     * Follows the outermost transaction: its commit readies what waited on it, its rollback
+     * forgets it.
+     */
+    private function listen(Connection $db): void
+    {
+        if ($this->listening) {
+            return;
         }
 
-        $this->pending[] = $row;
+        $this->listening = true;
+        $db->on(Connection::EVENT_COMMIT_TRANSACTION, function() {
+            array_push($this->ready, ...$this->pending);
+            array_push($this->readyActors, ...$this->pendingActors);
+            $this->pending = [];
+            $this->pendingActors = [];
+        });
+        $db->on(Connection::EVENT_ROLLBACK_TRANSACTION, function() {
+            $this->pending = [];
+            $this->pendingActors = [];
+        });
+    }
+
+    private function rewriteActors(): void
+    {
+        $users = array_unique($this->readyActors);
+        $this->readyActors = [];
+        if ($users === []) {
+            return;
+        }
+
+        try {
+            $retention = $this->db !== null
+                ? new Retention(['db' => $this->db])
+                : Auditor::getInstance()->getRetention();
+            foreach ($users as $userId) {
+                $retention->anonymiseActor($userId);
+            }
+        } catch (Throwable $e) {
+            $this->fail('Could not take a deleted user out of the log', $e);
+        }
     }
 
     /**
