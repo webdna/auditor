@@ -1,6 +1,7 @@
 /**
- * The log screen and an element's History: a row's detail in a slideout, older pages appended,
- * "show more" on a long value, and the History panel opened from an element's action menu.
+ * The log screen, an element's History and a user's Activity: a row's detail in a slideout, older
+ * pages appended to the list they belong to (each Activity tab is one), "show more" on a long
+ * value, and the History panel opened from an element's action menu.
  * Listeners are delegated from the document, so rows appended later and the slideouts' contents
  * (which live outside the page) need no wiring of their own.
  *

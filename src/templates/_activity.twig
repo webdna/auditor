@@ -1,0 +1,67 @@
+{#
+ # A user's Activity (BR-32): one of Craft's user edit screens, with two tabs — the changes they
+ # made, and their account's events. Each tab is its own list: older pages are appended by log.js
+ # from actions/auditor/activity/page, and a row opens its detail from actions/auditor/activity/view,
+ # which answers only for this user's rows.
+ #
+ # `tabs` is keyed by each tab's container id, the id Craft's tabs toggle.
+ #}
+{% do view.registerAssetBundle('webdna\\auditor\\web\\assets\\log\\LogAsset') %}
+{% do view.registerTranslations('auditor', [
+    'This event could not be loaded.',
+    'Older events could not be loaded.',
+]) %}
+
+{% for id, tab in tabs %}
+    <div id="{{ id }}" class="auditor-activity{% if not loop.first %} hidden{% endif %}" data-auditor-list data-auditor-tab="{{ tab.tab }}">
+        {% if tab.events is empty %}
+            <div class="zilch auditor-empty" data-auditor-empty>
+                <p>
+                    {%- if tab.tab == 'account' -%}
+                        {{ 'No account events recorded since Auditor was installed.'|t('auditor') }}
+                    {%- else -%}
+                        {{ 'No changes recorded since Auditor was installed.'|t('auditor') }}
+                    {%- endif -%}
+                </p>
+            </div>
+        {% else %}
+            <div class="tableview auditor-log">
+                <table class="data fullwidth">
+                    <thead>
+                        <tr>
+                            <th scope="col">{{ 'When'|t('auditor') }}</th>
+                            <th scope="col">{{ 'Event'|t('auditor') }}</th>
+                            <th scope="col">{{ 'What'|t('auditor') }}</th>
+                            <th scope="col">{{ 'Who'|t('auditor') }}</th>
+                            <th scope="col">{{ 'Where'|t('auditor') }}</th>
+                            {% if tab.multiSite %}
+                                <th scope="col">{{ 'Site'|t('app') }}</th>
+                            {% endif %}
+                        </tr>
+                    </thead>
+                    <tbody data-auditor-rows>
+                        {% for event in tab.events %}
+                            {% include 'auditor/_row' with {
+                                event: event,
+                                url: tab.urls[event.id] ?? null,
+                                auditor: tab.auditor,
+                                multiSite: tab.multiSite,
+                                viewAction: tab.viewAction,
+                                viewParams: tab.viewParams,
+                            } only %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% if tab.after %}
+                <div class="auditor-older">
+                    <button type="button" class="btn" data-auditor-older data-after="{{ tab.after }}"
+                        data-action="auditor/activity/page" data-filter="{{ (tab.viewParams|merge({tab: tab.tab}))|json_encode }}">
+                        {{ 'Older events'|t('auditor') }}
+                    </button>
+                </div>
+            {% endif %}
+        {% endif %}
+    </div>
+{% endfor %}

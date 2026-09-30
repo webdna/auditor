@@ -40,6 +40,12 @@ class Events extends Component
     public const PAGE_SIZE = 50;
 
     /**
+     * A user's Activity's two tabs (BR-32): the changes they made, and their account's events.
+     */
+    public const ACTIVITY_CHANGES = 'changes';
+    public const ACTIVITY_ACCOUNT = 'account';
+
+    /**
      * Every event each family writes, in the order the filter lists them.
      */
     public const EVENTS = [
@@ -189,7 +195,76 @@ class Events extends Component
      */
     public function page(Filter $filter, ?int $after = null, int $limit = self::PAGE_SIZE): array
     {
-        $query = $this->query($filter)
+        return $this->keyed($this->query($filter), $after, $limit);
+    }
+
+    /**
+     * One page of a user's Activity (BR-32), newest first, and the key of the next page.
+     *
+     * `changes` is what they did: the rows they are the actor of. `account` is what happened to
+     * their account: the sign-in and access rows whose subject is them. A row is on one tab,
+     * never both — their own sign-ins are account events, not changes they made.
+     *
+     * @param self::ACTIVITY_* $tab
+     * @return array{events: list<Event>, after: int|null}
+     */
+    public function activity(int $userId, string $tab, ?int $after = null, int $limit = self::PAGE_SIZE): array
+    {
+        return $this->keyed($this->activityQuery($userId, $tab), $after, $limit);
+    }
+
+    /**
+     * Whether a row is part of a user's Activity, on either tab, so its detail may be shown there.
+     */
+    public function inActivity(Event $event, int $userId): bool
+    {
+        if ($this->isAccountEvent($event, $userId)) {
+            return true;
+        }
+
+        return $event->actorId === $userId;
+    }
+
+    /**
+     * @param self::ACTIVITY_* $tab
+     * @return Query<int, array<string, mixed>>
+     */
+    private function activityQuery(int $userId, string $tab): Query
+    {
+        $query = (new Query())->from(Table::EVENTS);
+
+        if ($tab === self::ACTIVITY_ACCOUNT) {
+            return $query->where([
+                'elementId' => $userId,
+                'family' => [Event::FAMILY_AUTH, Event::FAMILY_ACCESS],
+            ]);
+        }
+
+        // Spelled out rather than NOT(account event): with elementId null that would be
+        // NOT(NULL), and a user group they saved would drop off their changes.
+        return $query->where(['actorId' => $userId])->andWhere([
+            'or',
+            ['family' => Event::FAMILY_ELEMENT],
+            ['elementId' => null],
+            ['not', ['elementId' => $userId]],
+        ]);
+    }
+
+    private function isAccountEvent(Event $event, int $userId): bool
+    {
+        return $event->elementId === $userId && in_array($event->family, [Event::FAMILY_AUTH, Event::FAMILY_ACCESS], true);
+    }
+
+    /**
+     * A query's rows a page at a time, newest first: keyed by id, never by offset and never
+     * counted (BR-29).
+     *
+     * @param Query<int, array<string, mixed>> $query
+     * @return array{events: list<Event>, after: int|null}
+     */
+    private function keyed(Query $query, ?int $after, int $limit): array
+    {
+        $query
             ->orderBy(['id' => SORT_DESC])
             ->limit($limit + 1);
 
