@@ -142,10 +142,23 @@ grep -rn '|raw\|raw(' src/templates/
 - **No event for impersonation, a password change, or a passkey / 2FA change.** Impersonation is a
   normal login with the impersonator in the session (`web/User.php:61`, `getImpersonator()`); a
   password change is a User save with `newPassword` set; `Auth::deletePasskey()`
-  (`services/Auth.php:661`) fires nothing. The passkey/2FA hook is a controller-action listener and
-  breaks silently when Craft renames an action — pin it with a test.
+  (`services/Auth.php:661`) fires nothing. But passkeys and the authenticator app are ActiveRecords:
+  a passkey's `WebAuthn` record is inserted once Craft verifies it and deleted through the record
+  (so `afterDelete` fires), and the authenticator's secret is stored once the first code verifies.
+  Signing in with either only *updates* its record. **Removing the authenticator app is
+  `Authenticator::deleteAll()`** (`auth/methods/TOTP.php:158`) — a bulk delete, no record event —
+  so it is heard only by hooking the two actions that call it (`auth/remove-method`,
+  `users/remove-2fa`), which break silently when Craft renames one; a test pins both (task 2.2).
 - **`UserPermissions` has no before-save event** — only `EVENT_AFTER_SAVE_USER_PERMISSIONS` /
   `EVENT_AFTER_SAVE_GROUP_PERMISSIONS`. The old set is gone by the time it fires.
+- **Saving a user group stores its project config without its permissions.** `saveGroup()` sets
+  `users.groups.<uid>` to `getConfig(false)`; `handleChangedUserGroup()` puts the old permissions
+  back on the *event*, but the stored value keeps none, so the `saveGroupPermissions()` that follows
+  arrives as an **addition** with no old value. The group's own `updateItem` event still carries
+  the old permissions — take them from there (task 2.2). Project config's change events are
+  class-level `ProjectConfig::EVENT_ADD_ITEM`/`UPDATE_ITEM`/`REMOVE_ITEM` with `oldValue`, fire once
+  per path (`ProjectConfigData::commitChanges()` dedupes), never when a value is unchanged, and
+  also on `project-config/apply`.
 - **User status changes write the `users` table without saving the element.** Activate, suspend,
   lock, unlock and group assignment fire their own `Users::EVENT_AFTER_*` events and no element save
   (found building the Typesense plugin from LLL). A watcher fed only by saves misses them.
@@ -230,6 +243,11 @@ grep -rn '|raw\|raw(' src/templates/
   address (`requireUserAgentAndIpForSession` is on by default and the CLI has neither), or
   `login()` quietly returns false. Craft's real login action runs through `Craft::$app->runAction()`
   with `REQUEST_METHOD=POST`, body params set and CSRF validation off (`AuthWatcherTest::postLogin()`).
+- **A control-panel action refuses a user without `accessCp`** before the action runs, so a test
+  posting `auth/*` as an ordinary user must grant it first. Signing in with `login()` also makes the
+  session elevated, which the permission and two-step actions require. A **console** controller runs
+  in the harness by instantiating it (`new UsersController('users', Craft::$app)` then
+  `runAction()`); its output goes straight to STDOUT, past any output buffer.
 - **Craft 5's `TestSetup::configureCraft()` needs `CRAFT_ROOT_PATH` and `CRAFT_TESTS_PATH` defined,
   and every `CRAFT_*_PATH` directory to exist** (it `realpath()`s them). Older harnesses omit both and
   fail with "Undefined constant".
