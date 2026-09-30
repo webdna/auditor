@@ -43,6 +43,7 @@ docker compose run --rm php composer analyse       # phpstan
 docker compose run --rm php composer cs            # ecs check (cs-fix to apply)
 PHP_VERSION=8.4 docker compose run --rm php composer check   # the second CI leg
 docker compose run --rm php composer test:commerce  # the Commerce leg: own vendor dir, PHPStan + commerce suite
+docker compose run --rm php php tests/bench/resave.php --entries=1000 --runs=3  # BR-36 benchmark, ~35s, not in check or CI
 ```
 
 `validate` needs `--no-plugins` (see Traps).
@@ -338,6 +339,17 @@ grep -rn '|raw\|raw(' src/templates/
 - **Codecept "redirects" itself to the vendor dir named in composer.json** ("Redirecting to
   Composer-installed version in vendor/codeception"). Run from `vendor-commerce/` it silently switches
   to the main install, which has no Commerce; the Commerce leg passes `--no-redirect`.
+- **A suite overrides a `\craft\test\Craft` setting under its own `modules: config:`**, not inline
+  on the `enabled:` entry — there `codeception.yml`'s `transaction: true` wins silently, and a suite
+  meant to commit runs inside a transaction that is never committed (`bench.suite.yml`, task 7.1).
+- **Two runs of the same Craft request never produce byte-identical SQL**: a relation join's alias
+  (`relations_<random>`), the project config version token and second-resolution timestamps change
+  every time. Compare query lists after normalising those (`SpeedTest::normalised()`), or compare
+  counts. The harness also re-saves project config at every `EVENT_AFTER_REQUEST` in a test that
+  built content, so a page's query count depends on what the test did before it.
+- **"Auditor off" in a test is `AuditorListeners::detached()`**, which takes away every handler the
+  plugin attached and puts them back — never a settings flag, which leaves the listeners (and
+  their cost) in place.
 - **`craftcms/phpstan` does not require PHPStan** — `phpstan/phpstan` is its own dev requirement.
 - **`composer validate` crashes with plugins loaded** ("$from (./vendor/craftcms) and $to (/app)
   must be absolute paths" from `craftcms/plugin-installer`) — use `--no-plugins`.
