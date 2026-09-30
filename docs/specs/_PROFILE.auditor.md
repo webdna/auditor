@@ -106,6 +106,12 @@ grep -rn '|raw\|raw(' src/templates/
   `enabledForSite` from record comparisons, and only when change tracking is on. `postDate`,
   `authorIds`, a user's `email`/`admin`, an order's status — none. They must be compared explicitly.
 
+- **Content is stored as `serializeValueForDb()`, not `serializeValue()`,** in `elements_sites.content`
+  keyed by the field's **layout element uid** (`services/Elements.php:4155-4190`), and a null value
+  is not stored at all. MySQL's JSON type reorders object keys, so a stored value compared to a fresh
+  serialisation must ignore key order. Fields whose `dbType()` is null (Matrix, Content Block,
+  Addresses) have no stored value on their owner. A relation field's serialisation runs an ids query.
+
 ### Craft — events that do not exist
 
 - **No event for impersonation, a password change, or a passkey / 2FA change.** Impersonation is a
@@ -159,6 +165,14 @@ grep -rn '|raw\|raw(' src/templates/
 - **The harness's logger (`Codeception\Lib\Connector\Yii2\Logger`) keeps no `messages`** — only a
   five-line text queue. To assert that something was logged, `Yii::setLogger()` a plain
   `yii\log\Logger` for the test and restore the harness's afterwards.
+
+- **On macOS, a file edited on the host can reach the container half-synced.** A run started straight
+  after an edit may fail with a `ParseError` ("Unclosed '{'") in the edited file although `php -l`
+  passes a moment later. Rerun before debugging; CI on Linux never sees it.
+- **Building test content:** `link` is a reserved field handle; Craft refuses a Local filesystem
+  inside its storage path (use the system temp directory); a section allows one author unless
+  `maxAuthors` is raised. `tests/Support/TestSite.php` builds §7's content model inside each test's
+  transaction.
 
 - **Craft 5's `TestSetup::configureCraft()` needs `CRAFT_ROOT_PATH` and `CRAFT_TESTS_PATH` defined,
   and every `CRAFT_*_PATH` directory to exist** (it `realpath()`s them). Older harnesses omit both and
