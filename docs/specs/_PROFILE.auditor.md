@@ -58,7 +58,9 @@ the `action` query parameter — a path under `admin/actions/` 404s from the CLI
 `setIsConsoleRequest(false)`, the plugin's `controllerNamespace` set to its web controllers (it was
 set while the request still looked like the CLI), `enableSession = false` + `setIdentity()`, and
 `handleRequest()` → `STATE_SENDING_RESPONSE` → `send()` inside an output buffer. The edition can be
-set on the plugin in memory, so Pro is exercised without touching craft5's project config. Run
+set on the plugin in memory, so Pro is exercised without touching craft5's project config. **`ddev exec` drops an
+empty argument** (`''`), shifting the rest — give a probe a real path (`dashboard`) for an action
+request, or every request 404s as a CP page. Run
 `ddev mutagen sync` after writing a script, or the container does not see it yet. **Run `ddev` there from
 `/Users/samuelbirch/projects/craft5` (lowercase p)** — that is the root DDEV registered, and from
 `~/Projects` a restart stops the project and then refuses to start it. Do not commit in craft5;
@@ -228,6 +230,12 @@ grep -rn '|raw\|raw(' src/templates/
   has no `displayName()` at all, so neither is fit to show as words (task 4.1, found on craft5).
 - **`UserPermissions::getAllPermissions()` memoises its list**, so a test that changes what is
   registered (an edition) reads it from a `new UserPermissions()`.
+- **A user edit screen of a plugin's own is `UsersController::EVENT_DEFINE_EDIT_SCREENS`** plus a
+  controller that uses Craft's `EditUserTrait` (`editedUser()`, `asEditUserScreen()`), which is
+  public from 5.1 (task 4.2). Craft builds the nav item as `users/<id>/<screen>` for someone else
+  and `myaccount/<screen>` for oneself, so both need a CP rule. `asEditUserScreen()` refuses a
+  screen id the event did not add, and adds a "Save and continue editing" alt action to every
+  screen but Profile — clear it on a screen with nothing to save.
 - **`Cp::nav()` makes every item's `url` absolute** (`web/twig/variables/Cp.php:404`) — compare
   with `UrlHelper::cpUrl()`, not the handle.
 
@@ -268,6 +276,10 @@ grep -rn '|raw\|raw(' src/templates/
   `console\controllers`.** Running a web controller through `runAction()` means setting it to
   `webdna\auditor\controllers` for the test and putting it back (`LogScreenTest`). A
   `renderTemplate()` response is rendered by `(new TemplateResponseFormatter())->format($response)`.
+- **A control-panel screen's content renders when the response is sent**, not when the action
+  returns: `contentTemplate()` stores a closure. A test reads `CpScreenResponseBehavior::$contentHtml`
+  and calls it **inside** the web request, or Craft's asset bundles throw on
+  `getIsCpRequest()` returning null (`ActivityTest::content()`).
 - **Signing in inside the harness** needs an active user and a request with a user agent and an
   address (`requireUserAgentAndIpForSession` is on by default and the CLI has neither), or
   `login()` quietly returns false. Craft's real login action runs through `Craft::$app->runAction()`
