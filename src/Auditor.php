@@ -71,8 +71,9 @@ class Auditor extends Plugin
     {
         parent::init();
 
-        $this->registerFlushes();
-        (new ElementWatcher($this))->attach();
+        $elements = new ElementWatcher($this);
+        $elements->attach();
+        $this->registerFlushes($elements);
     }
 
     public function getRecorder(): Recorder
@@ -91,21 +92,26 @@ class Auditor extends Plugin
      * The recorder's flush points (BR-3). Each asks whether the recorder was ever created, so a
      * request that recorded nothing does no work here at all (BR-34).
      */
-    private function registerFlushes(): void
+    private function registerFlushes(ElementWatcher $elements): void
     {
-        Craft::$app->on(Application::EVENT_AFTER_REQUEST, function() {
+        // The watcher goes first at each end, so a batch still open records its row in time for the
+        // flush, and in the job's name.
+        Craft::$app->on(Application::EVENT_AFTER_REQUEST, function() use ($elements) {
+            $elements->closeAll();
             if ($this->has('recorder', true)) {
                 $this->getRecorder()->flush();
             }
         });
 
         // Class-level, so the queue component is not created just to listen to it.
-        Event::on(Queue::class, Queue::EVENT_BEFORE_EXEC, function(ExecEvent $event) {
+        Event::on(Queue::class, Queue::EVENT_BEFORE_EXEC, function(ExecEvent $event) use ($elements) {
             if (is_object($event->job)) {
                 $this->getRecorder()->beginJob($event->job);
+                $elements->beginJob($event->job);
             }
         });
-        $endJob = function() {
+        $endJob = function() use ($elements) {
+            $elements->endJob();
             if ($this->has('recorder', true)) {
                 $this->getRecorder()->endJob();
             }

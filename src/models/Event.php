@@ -69,4 +69,18 @@ class Event extends Model
 
     public ?DateTime $dateCreated = null;
     public ?string $uid = null;
+
+    /**
+     * Not a column. The candidate batch it was recorded in, so it can be dropped if that operation
+     * turns out to be a batch (BR-14).
+     */
+    public ?string $batch = null;
+
+    /**
+     * Not a column. For a batch row, the `[elementId, siteId]` pairs written to the side table in the
+     * same flush (BR-15).
+     *
+     * @var list<array{int, int}>
+     */
+    public array $elements = [];
 }

@@ -121,7 +121,21 @@ class Recorder extends Component
     }
 
     /**
+     * Forgets the rows recorded for a candidate batch that turned out to be one: the batch row
+     * stands for them (BR-14).
+     */
+    public function discard(string $batch): void
+    {
+        $keep = fn(Event $row) => $row->batch !== $batch;
+        $this->pending = array_values(array_filter($this->pending, $keep));
+        $this->ready = array_values(array_filter($this->ready, $keep));
+    }
+
+    /**
      * Writes every ready row in one insert, and forgets them whether or not the insert worked.
+     *
+     * A batch row is the exception: it is inserted on its own, because its id is needed for the list
+     * of elements it covered, which follows it in the same transaction (BR-15).
      *
      * With a transaction still open nothing is written, because the insert would become part of
      * that transaction and go if it rolled back; the rows wait for the next flush.
@@ -141,9 +155,18 @@ class Recorder extends Component
             $rows = $this->ready;
             $this->ready = [];
 
-            $db->createCommand()
-                ->batchInsert(Table::EVENTS, Event::COLUMNS, array_map($this->toRow(...), $rows))
-                ->execute();
+            $batches = array_filter($rows, fn(Event $row) => $row->elements !== []);
+            if ($batches === []) {
+                $this->insertRows($db, $rows);
+                return;
+            }
+
+            $db->transaction(function() use ($db, $rows, $batches) {
+                $this->insertRows($db, array_filter($rows, fn(Event $row) => $row->elements === []));
+                foreach ($batches as $row) {
+                    $this->insertBatch($db, $row);
+                }
+            });
         } catch (Throwable $e) {
             $this->ready = [];
             $this->fail('Could not write the log’s rows', $e);
@@ -313,6 +336,38 @@ class Recorder extends Component
         }
 
         $this->pending[] = $row;
+    }
+
+    /**
+     * @param Event[] $rows
+     */
+    private function insertRows(Connection $db, array $rows): void
+    {
+        if ($rows === []) {
+            return;
+        }
+
+        $db->createCommand()
+            ->batchInsert(Table::EVENTS, Event::COLUMNS, array_map($this->toRow(...), array_values($rows)))
+            ->execute();
+    }
+
+    private function insertBatch(Connection $db, Event $row): void
+    {
+        $db->createCommand()
+            ->insert(Table::EVENTS, array_combine(Event::COLUMNS, $this->toRow($row)))
+            ->execute();
+        $id = (int)$db->getLastInsertID();
+
+        // Chunked: a resave of every entry on a large site lists tens of thousands.
+        foreach (array_chunk($row->elements, 1000) as $chunk) {
+            $db->createCommand()
+                ->batchInsert(Table::EVENT_ELEMENTS, ['eventId', 'elementId', 'siteId'], array_map(
+                    fn(array $element) => [$id, $element[0], $element[1]],
+                    $chunk,
+                ))
+                ->execute();
+        }
     }
 
     /**
