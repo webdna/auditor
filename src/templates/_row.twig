@@ -1,11 +1,18 @@
 {#
- # One row of the log — the log screen's, and later History's and Activity's. Every value is
- # escaped (BR-30). A subject that no longer exists, or that the viewer may not see, is its
- # recorded label without a link (TN-5).
+ # One row of the log — the log screen's, History's and Activity's. Every value is escaped
+ # (BR-30). A subject that no longer exists, or that the viewer may not see, is its recorded label
+ # without a link (TN-5).
+ #
+ # Optional: `viewAction` and `viewParams`, the action a row's detail is fetched from (the log's
+ # own by default); `history`, which words a batch as the element's part in it; `nested`, for a
+ # nested element's row shown beneath its owner's.
  #}
-<tr data-auditor-event="{{ event.id }}">
+{% set history = history ?? false %}
+<tr data-auditor-event="{{ event.id }}"{% if nested ?? false %} class="auditor-nested"{% endif %}>
     <td>
         <button type="button" class="btn-link auditor-open" data-auditor-open="{{ event.id }}"
+            data-auditor-view="{{ viewAction ?? 'auditor/events/view' }}"
+            data-auditor-params="{{ (viewParams ?? {})|json_encode }}"
             aria-label="{{ 'Show the detail of this event'|t('auditor') }}">
             <time datetime="{{ event.dateCreated|atom }}" title="{{ event.dateCreated|datetime('long') }}">
                 {{- event.dateCreated|datetime('short') -}}
@@ -17,7 +24,9 @@
         <div class="light smalltext">{{ auditor.familyLabel(event.family) }}</div>
     </td>
     <td>
-        {% if url %}
+        {% if history and event.event == 'bulk' %}
+            {{ auditor.batchSummary(event) }}
+        {% elseif url %}
             <a href="{{ url }}">{{ event.elementLabel }}</a>
         {% else %}
             {{ event.elementLabel ?? '—' }}

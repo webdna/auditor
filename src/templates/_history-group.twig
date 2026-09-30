@@ -1,0 +1,19 @@
+{#
+ # One request's rows in an element's History (BR-31): the element's own rows, then its nested
+ # elements' rows beneath them — so one publish reads as one change with its blocks' changes under
+ # it.
+ #}
+<tbody data-auditor-request="{{ group|first.requestId }}">
+    {% for event in group %}
+        {% include 'auditor/_row' with {
+            event: event,
+            url: urls[event.id] ?? null,
+            auditor: auditor,
+            multiSite: multiSite,
+            viewAction: viewAction,
+            viewParams: viewParams,
+            history: true,
+            nested: event.elementId != elementId and event.ownerId == elementId,
+        } only %}
+    {% endfor %}
+</tbody>

@@ -3,8 +3,12 @@
 namespace webdna\auditor;
 
 use Craft;
+use craft\base\Element;
+use craft\base\ElementInterface;
 use craft\base\Model;
 use craft\base\Plugin;
+use craft\elements\User;
+use craft\events\DefineMenuItemsEvent;
 use craft\events\RegisterUrlRulesEvent;
 use craft\events\RegisterUserPermissionsEvent;
 use craft\services\UserPermissions;
@@ -15,6 +19,7 @@ use webdna\auditor\services\Events;
 use webdna\auditor\services\Recorder;
 use webdna\auditor\watchers\AuthWatcher;
 use webdna\auditor\watchers\ElementWatcher;
+use webdna\auditor\web\assets\log\LogAsset;
 use yii\base\Application;
 use yii\base\Event;
 use yii\queue\ExecEvent;
@@ -55,6 +60,16 @@ class Auditor extends Plugin
      * Seeing the address and browser a row came from (BR-27).
      */
     public const PERMISSION_VIEW_NETWORK = 'auditor:viewNetwork';
+
+    /**
+     * Opening an element's History (BR-28, BR-31). Pro only.
+     */
+    public const PERMISSION_VIEW_HISTORY = 'auditor:viewHistory';
+
+    /**
+     * The History item's id in an element's action menu, a test hook (§7).
+     */
+    public const HISTORY_MENU_ITEM = 'auditor-history';
 
     /**
      * Starts above 1.0.0 on purpose (BR-39): a different plugin with this handle was installed at
@@ -98,6 +113,7 @@ class Auditor extends Plugin
         (new AuthWatcher($this))->attach();
         $this->registerFlushes($elements);
         $this->registerControlPanel();
+        $this->offerHistory();
     }
 
     public function getRecorder(): Recorder
@@ -129,15 +145,83 @@ class Auditor extends Plugin
         });
 
         Event::on(UserPermissions::class, UserPermissions::EVENT_REGISTER_PERMISSIONS, function(RegisterUserPermissionsEvent $event) {
-            $event->permissions[] = [
-                'heading' => Craft::t('auditor', 'Auditor'),
-                'permissions' => [
-                    self::PERMISSION_VIEW_NETWORK => [
-                        'label' => Craft::t('auditor', 'See the address and browser each event came from'),
-                    ],
+            $permissions = [
+                self::PERMISSION_VIEW_NETWORK => [
+                    'label' => Craft::t('auditor', 'See the address and browser each event came from'),
                 ],
             ];
+            if ($this->is(self::EDITION_PRO)) {
+                $permissions[self::PERMISSION_VIEW_HISTORY] = [
+                    'label' => Craft::t('auditor', 'See the history of what they can view'),
+                ];
+            }
+
+            $event->permissions[] = [
+                'heading' => Craft::t('auditor', 'Auditor'),
+                'permissions' => $permissions,
+            ];
         });
+    }
+
+    /**
+     * History in every element's action menu, on Pro, for someone allowed to open it (BR-31,
+     * BR-33). Class-level, so it reaches every element type's edit screen.
+     */
+    private function offerHistory(): void
+    {
+        Event::on(Element::class, Element::EVENT_DEFINE_ACTION_MENU_ITEMS, function(DefineMenuItemsEvent $event) {
+            /** @var ElementInterface $element */
+            $element = $event->sender;
+            $item = $this->historyMenuItem($element, Craft::$app->getUser()->getIdentity());
+            if ($item !== null) {
+                $event->items[] = $item;
+                Craft::$app->getView()->registerAssetBundle(LogAsset::class);
+                Craft::$app->getView()->registerTranslations('auditor', [
+                    'This event could not be loaded.',
+                    'Older events could not be loaded.',
+                    'The history could not be loaded.',
+                ]);
+            }
+        });
+    }
+
+    /**
+     * The History menu item for an element, or null where it does not belong: on Lite, for a
+     * viewer without the permission, for an unpublished draft (it has no history yet), or for an
+     * element type the log never records.
+     *
+     * It names the canonical element, because the edit screen usually holds a provisional draft,
+     * and it carries only ids: the History itself is fetched when the item is chosen, so the edit
+     * screen pays nothing for it (BR-37).
+     *
+     * @return array<string, mixed>|null
+     */
+    public function historyMenuItem(ElementInterface $element, ?User $viewer): ?array
+    {
+        if (!$this->is(self::EDITION_PRO) || !$viewer?->can(self::PERMISSION_VIEW_HISTORY)) {
+            return null;
+        }
+        if (!$element->id || $element->getIsUnpublishedDraft()) {
+            return null;
+        }
+        foreach ($this->getSettings()->excludeElementTypes as $type) {
+            if ($element instanceof $type) {
+                return null;
+            }
+        }
+
+        return [
+            'id' => self::HISTORY_MENU_ITEM,
+            'icon' => 'clock-rotate-left',
+            'label' => Craft::t('auditor', 'History'),
+            'attributes' => [
+                'data' => [
+                    'auditor-history' => true,
+                    'element-id' => $element->getCanonicalId(),
+                    'site-id' => $element->siteId,
+                ],
+            ],
+        ];
     }
 
     /**

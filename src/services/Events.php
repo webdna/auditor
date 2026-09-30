@@ -9,8 +9,13 @@ use craft\elements\User;
 use craft\helpers\DateTimeHelper;
 use craft\helpers\Db;
 use craft\helpers\Json;
+use craft\helpers\StringHelper;
+use craft\helpers\UrlHelper;
 use craft\models\UserGroup;
+use craft\web\View;
 use DateInterval;
+use DateTimeZone;
+use webdna\auditor\Auditor;
 use webdna\auditor\db\Table;
 use webdna\auditor\models\Event;
 use webdna\auditor\models\Filter;
@@ -208,6 +213,239 @@ class Events extends Component
         $row = (new Query())->from(Table::EVENTS)->where(['id' => $id])->one();
 
         return $row ? $this->hydrate($row) : null;
+    }
+
+    /**
+     * One page of an element's History (BR-31), newest first: the element rows whose subject or
+     * owner it is, and the batches that listed it, grouped by request — each group's own rows
+     * first, then its nested elements' beneath them.
+     *
+     * Each of the three sources is read by its own index, ids only, and the page is fetched by
+     * id. A page never ends part-way through a request: the rest of the last group's request is
+     * read too, so one publish stays one group.
+     *
+     * @return array{groups: list<list<Event>>, events: list<Event>, after: int|null}
+     */
+    public function history(int $elementId, ?int $after = null, int $limit = self::PAGE_SIZE): array
+    {
+        $ids = [];
+        foreach ($this->historySources($elementId) as [$column, $query]) {
+            if ($after !== null) {
+                $query->andWhere(['<', $column, $after]);
+            }
+            $ids = [...$ids, ...array_map('intval', $query->orderBy([$column => SORT_DESC])->limit($limit + 1)->column())];
+        }
+
+        $ids = array_values(array_unique($ids));
+        rsort($ids);
+        $more = count($ids) > $limit;
+        $ids = array_slice($ids, 0, $limit);
+        if ($ids === []) {
+            return ['groups' => [], 'events' => [], 'after' => null];
+        }
+
+        $rows = (new Query())->from(Table::EVENTS)->where(['id' => $ids])->orderBy(['id' => SORT_DESC])->all();
+        $last = end($rows);
+        $oldest = min($ids);
+
+        if ($more && $last && $last['requestId'] !== null) {
+            $rest = (new Query())
+                ->from(Table::EVENTS)
+                ->where(['family' => Event::FAMILY_ELEMENT, 'requestId' => $last['requestId']])
+                ->andWhere(['or', ['elementId' => $elementId], ['ownerId' => $elementId]])
+                ->andWhere(['<', 'id', $oldest])
+                ->orderBy(['id' => SORT_DESC])
+                ->all();
+            if ($rest !== []) {
+                $rows = [...$rows, ...$rest];
+                $oldest = (int)end($rest)['id'];
+            }
+        }
+
+        $events = array_map(fn(array $row) => $this->hydrate($row), $rows);
+
+        return [
+            'groups' => $this->groupByRequest($events, $elementId),
+            'events' => $events,
+            'after' => $more ? $oldest : null,
+        ];
+    }
+
+    /**
+     * Whether a row is part of an element's History, so its detail may be shown there.
+     */
+    public function inHistory(Event $event, int $elementId): bool
+    {
+        if ($event->family !== Event::FAMILY_ELEMENT) {
+            return false;
+        }
+        if ($event->elementId === $elementId || $event->ownerId === $elementId) {
+            return true;
+        }
+
+        return $event->event === ElementWatcher::EVENT_BULK && (new Query())
+            ->from(Table::EVENT_ELEMENTS)
+            ->where(['eventId' => $event->id, 'elementId' => $elementId])
+            ->exists();
+    }
+
+    /**
+     * What a batch row reads as in History: "Included in a re-save of 1,240 entries" for one of
+     * the element service's own operations, and "Included in a batch of 4 entries (Set Status)"
+     * for an index action or a job, named by its display name or, for a job, which has none, by
+     * its class's own name in words.
+     */
+    public function batchSummary(Event $event): string
+    {
+        $data = $event->data ?? [];
+        $type = is_string($data['elementType'] ?? null) ? $data['elementType'] : '';
+        $count = (int)($data['count'] ?? 0);
+        $params = [
+            'count' => Craft::$app->getFormatter()->asInteger($count),
+            'type' => $this->isElementType($type)
+                ? ($count === 1 ? $type::lowerDisplayName() : $type::pluralLowerDisplayName())
+                : Craft::t('auditor', 'elements'),
+        ];
+
+        $operation = is_string($data['operation'] ?? null) ? $data['operation'] : '';
+        if (isset(self::OPERATION_LABELS[$operation])) {
+            return Craft::t('auditor', 'Included in a {operation} of {count} {type}', $params + [
+                'operation' => mb_strtolower(Craft::t('auditor', self::OPERATION_LABELS[$operation])),
+            ]);
+        }
+        if ($operation === '') {
+            return Craft::t('auditor', 'Included in a batch of {count} {type}', $params);
+        }
+
+        // A component's default display name is its class's short name, which reads no better.
+        $basename = StringHelper::basename($operation);
+        $name = $this->displayName($operation);
+        if ($name === null || $name === $basename) {
+            $name = ucfirst(mb_strtolower(Inflector::camel2words($basename, false)));
+        }
+
+        return Craft::t('auditor', 'Included in a batch of {count} {type} ({name})', $params + ['name' => $name]);
+    }
+
+    /**
+     * A row's detail, for the slideout, as the viewer may see it: the address and browser are
+     * cleared first for anyone not allowed to see them (BR-27), so no template can show them, and
+     * the link to the rest of its request is offered only to someone who can open the log.
+     */
+    public function renderDetail(Event $event, ?User $viewer): string
+    {
+        if (!$viewer?->can(Auditor::PERMISSION_VIEW_NETWORK)) {
+            $event->ip = null;
+            $event->userAgent = null;
+        }
+
+        return Craft::$app->getView()->renderTemplate('auditor/_slideout', [
+            'event' => $event,
+            'url' => $event->id !== null ? ($this->subjectUrls([$event], $viewer)[$event->id] ?? null) : null,
+            'impersonator' => $this->impersonatorLabel($event),
+            'described' => $this->describe($event),
+            'auditor' => $this,
+            'requestUrl' => $viewer?->can(Auditor::PERMISSION_VIEW_LOG) ? $this->requestUrl($event) : null,
+        ], View::TEMPLATE_MODE_CP);
+    }
+
+    /**
+     * The log narrowed to the row's request. The request id has no index of its own, so the
+     * address also bounds the search to the day either side of the row, which the date index
+     * serves; a request longer than that is not a request anyone runs.
+     */
+    private function requestUrl(Event $event): ?string
+    {
+        if ($event->requestId === null || $event->dateCreated === null) {
+            return null;
+        }
+
+        $date = (clone $event->dateCreated)->setTimezone(new DateTimeZone(Craft::$app->getTimeZone()));
+        $filter = new Filter([
+            'request' => $event->requestId,
+            'from' => (clone $date)->modify('-1 day')->setTime(0, 0),
+            'to' => (clone $date)->modify('+1 day')->setTime(0, 0),
+        ]);
+
+        return UrlHelper::cpUrl(Auditor::HANDLE, $filter->toParams());
+    }
+
+    /**
+     * History's three sources, each an ids-only query its own index serves, with the id column
+     * it pages on.
+     *
+     * @return list<array{string, Query<int, array<string, mixed>>}>
+     */
+    private function historySources(int $elementId): array
+    {
+        $element = fn(string $column) => (new Query())
+            ->select('id')
+            ->from(Table::EVENTS)
+            ->where([$column => $elementId, 'family' => Event::FAMILY_ELEMENT]);
+
+        return [
+            ['id', $element('elementId')],
+            ['id', $element('ownerId')],
+            ['eventId', (new Query())
+                ->select('eventId')
+                ->distinct()
+                ->from(Table::EVENT_ELEMENTS)
+                ->where(['elementId' => $elementId]),
+            ],
+        ];
+    }
+
+    /**
+     * Rows grouped by the request that wrote them, newest group first. In each, a nested
+     * element's row sits beneath the save of the element it belongs to — the first of the
+     * element's own rows written after it, since Craft saves nested elements before their owner
+     * finishes — so a request that saved the element twice reads as two publishes. A nested row
+     * with no such save (a block saved on its own) stays where it fell.
+     *
+     * @param list<Event> $events Newest first.
+     * @return list<list<Event>>
+     */
+    private function groupByRequest(array $events, int $elementId): array
+    {
+        $groups = [];
+        foreach ($events as $event) {
+            $groups[$event->requestId ?? "row-$event->id"][] = $event;
+        }
+
+        $isNested = fn(Event $event) => $event->elementId !== $elementId && $event->ownerId === $elementId;
+
+        return array_values(array_map(function(array $rows) use ($isNested) {
+            $heads = array_values(array_filter($rows, fn(Event $event) => !$isNested($event)));
+            $beneath = [];
+            $placed = [];
+            foreach ($rows as $row) {
+                if (!$isNested($row)) {
+                    continue;
+                }
+                // Rows are newest first, so the last head newer than the row is the next one written.
+                $head = null;
+                foreach ($heads as $candidate) {
+                    if ($candidate->id > $row->id) {
+                        $head = $candidate;
+                    }
+                }
+                if ($head !== null) {
+                    $beneath[$head->id][] = $row;
+                    $placed[$row->id] = true;
+                }
+            }
+
+            $ordered = [];
+            foreach ($rows as $row) {
+                if (!$isNested($row)) {
+                    $ordered = [...$ordered, $row, ...($beneath[$row->id] ?? [])];
+                } elseif (!isset($placed[$row->id])) {
+                    $ordered[] = $row;
+                }
+            }
+
+            return $ordered;
+        }, $groups));
     }
 
     /**

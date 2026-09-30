@@ -88,3 +88,11 @@
 .auditor-more {
   margin-top: 4px;
 }
+
+.auditor-history tbody + tbody {
+  border-top: 2px solid var(--gray-200, #e3e5e8);
+}
+
+.auditor-nested td:nth-child(3) {
+  padding-inline-start: 28px;
+}
