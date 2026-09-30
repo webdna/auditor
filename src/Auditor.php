@@ -13,12 +13,15 @@ use craft\events\DefineEditUserScreensEvent;
 use craft\events\DefineMenuItemsEvent;
 use craft\events\RegisterUrlRulesEvent;
 use craft\events\RegisterUserPermissionsEvent;
+use craft\services\Gc;
 use craft\services\UserPermissions;
 use craft\web\UrlManager;
+use Throwable;
 use webdna\auditor\models\Settings;
 use webdna\auditor\services\Differ;
 use webdna\auditor\services\Events;
 use webdna\auditor\services\Recorder;
+use webdna\auditor\services\Retention;
 use webdna\auditor\watchers\AuthWatcher;
 use webdna\auditor\watchers\ElementWatcher;
 use webdna\auditor\web\assets\log\LogAsset;
@@ -40,6 +43,7 @@ use yii\queue\Queue;
  * @property-read Recorder $recorder
  * @property-read Differ $differ
  * @property-read Events $events
+ * @property-read Retention $retention
  */
 class Auditor extends Plugin
 {
@@ -112,6 +116,7 @@ class Auditor extends Plugin
                 'recorder' => Recorder::class,
                 'differ' => Differ::class,
                 'events' => Events::class,
+                'retention' => Retention::class,
             ],
         ];
     }
@@ -124,6 +129,7 @@ class Auditor extends Plugin
         $elements->attach();
         (new AuthWatcher($this))->attach();
         $this->registerFlushes($elements);
+        $this->registerRetention();
         $this->registerControlPanel();
         $this->offerHistory();
         $this->offerActivity();
@@ -145,6 +151,27 @@ class Auditor extends Plugin
     {
         /** @var Events */
         return $this->get('events');
+    }
+
+    public function getRetention(): Retention
+    {
+        /** @var Retention */
+        return $this->get('retention');
+    }
+
+    /**
+     * Rows past the retention period go whenever Craft collects its garbage (BR-25) — on a share
+     * of web requests, and on `craft gc`. Class-level, so the service is not created to be listened to.
+     */
+    private function registerRetention(): void
+    {
+        Event::on(Gc::class, Gc::EVENT_RUN, function() {
+            try {
+                $this->getRetention()->prune();
+            } catch (Throwable $e) {
+                Craft::error(sprintf('Could not remove the log’s old rows: %s', $e->getMessage()), self::HANDLE);
+            }
+        });
     }
 
     /**
