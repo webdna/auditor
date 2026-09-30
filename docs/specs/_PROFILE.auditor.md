@@ -149,6 +149,17 @@ grep -rn '|raw\|raw(' src/templates/
 
 ### Tooling (sibling webdna harnesses)
 
+- **A cloned `Craft::$app->getDb()` is NOT a second connection under the harness.** With
+  `transaction: true`, the Yii2 module's `TransactionForcer` hands any connection with the same DSN
+  and credentials the main connection's cached PDO, already inside the per-test transaction, so
+  `beginTransaction()` on the clone throws "There is already an active transaction" and nothing it
+  writes is committed. `tests/integration/SecondConnection.php` marks the open event handled on the
+  instance, which keeps the forcer from seeing the new connection. Use it for DDL and for anything
+  that must really commit or roll back, and delete what it writes.
+- **The harness's logger (`Codeception\Lib\Connector\Yii2\Logger`) keeps no `messages`** — only a
+  five-line text queue. To assert that something was logged, `Yii::setLogger()` a plain
+  `yii\log\Logger` for the test and restore the harness's afterwards.
+
 - **Craft 5's `TestSetup::configureCraft()` needs `CRAFT_ROOT_PATH` and `CRAFT_TESTS_PATH` defined,
   and every `CRAFT_*_PATH` directory to exist** (it `realpath()`s them). Older harnesses omit both and
   fail with "Undefined constant".
