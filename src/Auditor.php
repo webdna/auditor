@@ -6,6 +6,7 @@ use Craft;
 use craft\base\Model;
 use craft\base\Plugin;
 use webdna\auditor\models\Settings;
+use webdna\auditor\services\Differ;
 use webdna\auditor\services\Recorder;
 use yii\base\Application;
 use yii\base\Event;
@@ -23,6 +24,7 @@ use yii\queue\Queue;
  *
  * @method Settings getSettings()
  * @property-read Recorder $recorder
+ * @property-read Differ $differ
  */
 class Auditor extends Plugin
 {
@@ -59,6 +61,7 @@ class Auditor extends Plugin
         return [
             'components' => [
                 'recorder' => Recorder::class,
+                'differ' => Differ::class,
             ],
         ];
     }
@@ -74,6 +77,12 @@ class Auditor extends Plugin
     {
         /** @var Recorder */
         return $this->get('recorder');
+    }
+
+    public function getDiffer(): Differ
+    {
+        /** @var Differ */
+        return $this->get('differ');
     }
 
     /**
