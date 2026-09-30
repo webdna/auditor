@@ -155,6 +155,18 @@ grep -rn '|raw\|raw(' src/templates/
 - **Destructive and element handlers must skip drafts, provisional drafts and revisions.** A CP save
   hard-deletes its provisional draft, which fires the same delete event as a real delete; unguarded in
   LLL, that cascade deleted real content. Autosaves would also flood the log.
+- **Every save and every delete runs inside a Craft bulk operation** (`ensureBulkOp()`,
+  `services/Elements.php:4001`, `:2620`), so "inside a bulk operation" does not mean "a bulk
+  change". A top-level save's own before and after events fire **outside** its operation (3915 and
+  4429 bracket the call); only its nested saves, and saves made inside an operation someone else
+  opened (`resaveElements()`, a batched job), fall inside. `resumeBulkOp()` fires no event, so a
+  batched job's later queue runs are invisible to bulk-op listeners (`queue/BaseBatchedElementJob.php`).
+  `restoreElements()` opens no operation at all, and the element-index controller wraps an action
+  only in `EVENT_BEFORE/AFTER_PERFORM_ACTION` — the after event only on success.
+- **Craft 5 stores a draft's or revision's nested entries as ordinary elements** (no `draftId` of
+  their own) owned by the draft. `Entry::find()` returns them, so a resave "of every entry" is mostly
+  such entries on a real site (200 of craft5's 251); `ElementHelper::isDraftOrRevision()` follows the
+  owners and is the only way to tell.
 - **Yii fires `EVENT_COMMIT_TRANSACTION` / `EVENT_ROLLBACK_TRANSACTION` only at the outermost level**
   (`yiisoft/yii2/db/Transaction.php:163`, `:197`). A savepoint rolled back inside a committed outer
   transaction is invisible to a listener.
