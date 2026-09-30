@@ -1,0 +1,52 @@
+{#
+ # An element's History (BR-31), for the slideout its action menu opens: newest first, grouped by
+ # request. Older pages are appended by log.js from actions/auditor/history/page; a row opens its
+ # detail from actions/auditor/history/view, which answers only for this element's rows.
+ #}
+<div class="auditor-detail auditor-history" data-auditor-list>
+    <header class="auditor-detail-header">
+        <h2>{{ 'History of {title}'|t('auditor')|replace({'{title}': element.uiLabel}) }}</h2>
+        <button type="button" class="btn" data-auditor-close>{{ 'Close'|t('app') }}</button>
+    </header>
+
+    {% if groups is empty %}
+        <div class="zilch auditor-empty" data-auditor-empty>
+            <p>{{ 'No changes recorded since Auditor was installed.'|t('auditor') }}</p>
+        </div>
+    {% else %}
+        <table class="data fullwidth auditor-log" data-auditor-rows>
+            <thead>
+                <tr>
+                    <th scope="col">{{ 'When'|t('auditor') }}</th>
+                    <th scope="col">{{ 'Event'|t('auditor') }}</th>
+                    <th scope="col">{{ 'What'|t('auditor') }}</th>
+                    <th scope="col">{{ 'Who'|t('auditor') }}</th>
+                    <th scope="col">{{ 'Where'|t('auditor') }}</th>
+                    {% if multiSite %}
+                        <th scope="col">{{ 'Site'|t('app') }}</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            {% for group in groups %}
+                {% include 'auditor/_history-group' with {
+                    group: group,
+                    elementId: elementId,
+                    urls: urls,
+                    auditor: auditor,
+                    multiSite: multiSite,
+                    viewAction: viewAction,
+                    viewParams: viewParams,
+                } only %}
+            {% endfor %}
+        </table>
+
+        {% if after %}
+            <div class="auditor-older">
+                <button type="button" class="btn" data-auditor-older data-after="{{ after }}"
+                    data-action="auditor/history/page" data-filter="{{ viewParams|json_encode }}">
+                    {{ 'Older changes'|t('auditor') }}
+                </button>
+            </div>
+        {% endif %}
+    {% endif %}
+</div>

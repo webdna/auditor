@@ -102,4 +102,16 @@ return [
     'Yes' => 'Yes',
     'No' => 'No',
     'See the address and browser each event came from' => 'See the address and browser each event came from',
+
+    // History (Pro)
+    'See the history of what they can view' => 'See the history of what they can view',
+    'History' => 'History',
+    'History of {title}' => 'History of {title}',
+    'No changes recorded since Auditor was installed.' => 'No changes recorded since Auditor was installed.',
+    'Older changes' => 'Older changes',
+    'The history could not be loaded.' => 'The history could not be loaded.',
+    'Included in a {operation} of {count} {type}' => 'Included in a {operation} of {count} {type}',
+    'Included in a batch of {count} {type}' => 'Included in a batch of {count} {type}',
+    'Included in a batch of {count} {type} ({name})' => 'Included in a batch of {count} {type} ({name})',
+    'elements' => 'elements',
 ];

@@ -8,7 +8,6 @@ use craft\helpers\UrlHelper;
 use craft\web\Controller;
 use craft\web\View;
 use webdna\auditor\Auditor;
-use webdna\auditor\models\Event;
 use webdna\auditor\models\Filter;
 use yii\web\NotFoundHttpException;
 use yii\web\Response;
@@ -102,50 +101,8 @@ class EventsController extends Controller
             throw new NotFoundHttpException('Event not found');
         }
 
-        $this->hideNetwork($event);
-
-        $html = Craft::$app->getView()->renderTemplate('auditor/_slideout', [
-            'event' => $event,
-            'url' => $service->subjectUrls([$event], static::currentUser())[$id] ?? null,
-            'impersonator' => $service->impersonatorLabel($event),
-            'described' => $service->describe($event),
-            'auditor' => $service,
-            'requestUrl' => $this->requestUrl($event),
-        ], View::TEMPLATE_MODE_CP);
+        $html = $service->renderDetail($event, static::currentUser());
 
         return $this->asRaw($html);
-    }
-
-    /**
-     * BR-27: the address and browser are cleared before the row reaches a template, so no
-     * template can show them to someone not allowed to see them.
-     */
-    private function hideNetwork(Event $event): void
-    {
-        if (!Craft::$app->getUser()->checkPermission(Auditor::PERMISSION_VIEW_NETWORK)) {
-            $event->ip = null;
-            $event->userAgent = null;
-        }
-    }
-
-    /**
-     * The log narrowed to the row's request. The request id has no index of its own, so the
-     * address also bounds the search to the day either side of the row, which the date index
-     * serves; a request longer than that is not a request anyone runs.
-     */
-    private function requestUrl(Event $event): ?string
-    {
-        if ($event->requestId === null || $event->dateCreated === null) {
-            return null;
-        }
-
-        $date = (clone $event->dateCreated)->setTimezone(new \DateTimeZone(Craft::$app->getTimeZone()));
-        $filter = new Filter([
-            'request' => $event->requestId,
-            'from' => (clone $date)->modify('-1 day')->setTime(0, 0),
-            'to' => (clone $date)->modify('+1 day')->setTime(0, 0),
-        ]);
-
-        return UrlHelper::cpUrl('auditor', $filter->toParams());
     }
 }

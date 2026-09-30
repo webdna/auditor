@@ -1,43 +1,80 @@
 /**
- * The log screen: a row's detail in a slideout, older pages appended, and "show more" on a long
- * value. Listeners are delegated from the document, so rows appended later and the slideout's own
- * contents (which live outside the page) need no wiring of their own.
+ * The log screen and an element's History: a row's detail in a slideout, older pages appended,
+ * "show more" on a long value, and the History panel opened from an element's action menu.
+ * Listeners are delegated from the document, so rows appended later and the slideouts' contents
+ * (which live outside the page) need no wiring of their own.
  *
- * Every piece of HTML inserted here was rendered, and escaped, by the server's templates.
+ * Every piece of HTML inserted here was rendered, and escaped, by the server's templates. The
+ * History panel is fetched when its menu item is chosen, never with the edit screen (BR-37).
  */
 (function() {
   'use strict';
 
-  let slideout = null;
+  // The History panel, and a row's detail, which opens over it.
+  let history = null;
+  let detail = null;
 
-  function openEvent(id) {
-    Craft.sendActionRequest('GET', 'auditor/events/view', {params: {id: id}})
+  function open(html, onClose) {
+    const slideout = new Craft.Slideout(html, {
+      containerAttributes: {class: 'auditor-slideout'},
+    });
+    slideout.on('close', function() {
+      onClose();
+      setTimeout(function() { slideout.destroy(); }, 300);
+    });
+
+    return slideout;
+  }
+
+  function openEvent(button) {
+    const params = Object.assign({}, JSON.parse(button.dataset.auditorParams || '{}'), {id: button.dataset.auditorOpen});
+
+    Craft.sendActionRequest('GET', button.dataset.auditorView || 'auditor/events/view', {params: params})
       .then(function(response) {
-        if (slideout) {
-          slideout.close();
+        if (detail) {
+          detail.close();
         }
-        slideout = new Craft.Slideout(response.data, {
-          containerAttributes: {class: 'auditor-slideout'},
+        const opened = open(response.data, function() {
+          if (detail === opened) {
+            detail = null;
+          }
         });
-        slideout.on('close', function() {
-          const closed = slideout;
-          slideout = null;
-          setTimeout(function() { closed.destroy(); }, 300);
-        });
+        detail = opened;
       })
       .catch(function() {
         Craft.cp.displayError(Craft.t('auditor', 'This event could not be loaded.'));
       });
   }
 
+  function openHistory(button) {
+    const params = {elementId: button.dataset.elementId, siteId: button.dataset.siteId};
+
+    Craft.sendActionRequest('GET', 'auditor/history/index', {params: params})
+      .then(function(response) {
+        if (history) {
+          history.close();
+        }
+        const opened = open(response.data, function() {
+          if (history === opened) {
+            history = null;
+          }
+        });
+        history = opened;
+      })
+      .catch(function() {
+        Craft.cp.displayError(Craft.t('auditor', 'The history could not be loaded.'));
+      });
+  }
+
   function loadOlder(button) {
     const params = Object.assign({}, JSON.parse(button.dataset.filter || '{}'), {after: button.dataset.after});
+    const list = button.closest('[data-auditor-list]') || document;
     button.classList.add('loading');
     button.disabled = true;
 
-    Craft.sendActionRequest('GET', 'auditor/events/index', {params: params})
+    Craft.sendActionRequest('GET', button.dataset.action || 'auditor/events/index', {params: params})
       .then(function(response) {
-        document.querySelector('[data-auditor-rows]').insertAdjacentHTML('beforeend', response.data.html);
+        list.querySelector('[data-auditor-rows]').insertAdjacentHTML('beforeend', response.data.html);
         if (response.data.after) {
           button.dataset.after = response.data.after;
           button.disabled = false;
@@ -63,21 +100,30 @@
     button.textContent = expanded ? button.dataset.more : button.dataset.less;
   }
 
+  function close(button) {
+    const slideout = button.closest('[data-auditor-list]') ? history : detail;
+    if (slideout) {
+      slideout.close();
+    }
+  }
+
   document.addEventListener('click', function(event) {
-    const target = event.target.closest('[data-auditor-open], [data-auditor-older], [data-auditor-more], [data-auditor-close]');
+    const target = event.target.closest('[data-auditor-open], [data-auditor-older], [data-auditor-more], [data-auditor-close], [data-auditor-history]');
     if (!target) {
       return;
     }
     event.preventDefault();
 
     if (target.hasAttribute('data-auditor-open')) {
-      openEvent(target.dataset.auditorOpen);
+      openEvent(target);
     } else if (target.hasAttribute('data-auditor-older')) {
       loadOlder(target);
     } else if (target.hasAttribute('data-auditor-more')) {
       toggleMore(target);
-    } else if (slideout) {
-      slideout.close();
+    } else if (target.hasAttribute('data-auditor-history')) {
+      openHistory(target);
+    } else {
+      close(target);
     }
   });
 })();
