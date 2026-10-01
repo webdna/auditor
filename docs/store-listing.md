@@ -9,16 +9,16 @@
 |---|---|
 | Name | Auditor |
 | Handle | `auditor` |
-| Package | `webdna/craft-auditor` |
+| Package | `webdna/auditor` |
 | Short description | Who changed what, when, from where and what it said before — and every sign-in and change of access — in one log. |
 | Categories | Security · Utilities |
 | Keywords | audit, audit log, history, activity, security, changes, sign-in, compliance |
 | Editions | **Lite** — the log (price: **Sam — open**) · **Pro** — adds History and Activity (price: **Sam — open**) |
 | Licence | Craft License |
 | Requires | Craft CMS 5.6+, PHP 8.2+; Craft Commerce 5 optional |
-| Documentation URL | https://github.com/webdna/craft-auditor/blob/main/README.md |
-| Changelog URL | https://raw.githubusercontent.com/webdna/craft-auditor/main/CHANGELOG.md |
-| Repository | https://github.com/webdna/craft-auditor (**Sam — to create**) |
+| Documentation URL | https://github.com/webdna/auditor/blob/main/README.md |
+| Changelog URL | https://raw.githubusercontent.com/webdna/auditor/main/CHANGELOG.md |
+| Repository | https://github.com/webdna/auditor (created 1 Oct 2026) |
 | Icon | `src/icon.svg` (draft: a log page with a clock — **Sam to approve or replace**) |
 
 `composer.json` already names the package, the repository and both URLs above; if the repository

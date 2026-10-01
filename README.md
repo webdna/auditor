@@ -48,7 +48,7 @@ From the Plugin Store: search for "Auditor" and install it.
 With Composer:
 
 ```bash
-composer require webdna/craft-auditor
+composer require webdna/auditor
 php craft plugin/install auditor
 ```
 
@@ -375,4 +375,4 @@ older plugin with the handle `auditor`. That plugin's own tables are never read,
 
 ## Support
 
-Report a problem at [github.com/webdna/craft-auditor/issues](https://github.com/webdna/craft-auditor/issues).
+Report a problem at [github.com/webdna/auditor/issues](https://github.com/webdna/auditor/issues).
