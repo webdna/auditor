@@ -56,7 +56,10 @@
         ],
         "cs": "ecs check --ansi",
         "cs-fix": "ecs check --ansi --fix",
-        "analyse": "phpstan analyse --memory-limit=1G --no-progress",
+        "analyse": [
+            "codecept build --quiet",
+            "phpstan analyse --memory-limit=1G --no-progress"
+        ],
         "test:unit": "codecept run unit",
         "test:integration": "codecept run integration",
         "test:commerce": "sh tests/commerce/run.sh"
