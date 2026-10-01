@@ -9,6 +9,7 @@ parameters:
     excludePaths:
         - tests/_craft/storage
         - tests/_output
-        - tests/Support/_generated
+        # Codeception builds it and .gitignore drops it, so a fresh checkout has none.
+        - tests/Support/_generated (?)
         # Needs Commerce, which vendor/ never has; analysed by tests/commerce/run.sh.
         - tests/commerce
