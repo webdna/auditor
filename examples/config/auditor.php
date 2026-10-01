@@ -16,8 +16,8 @@ return [
     // Element classes never recorded, e.g. [\craft\elements\Asset::class].
     'excludeElementTypes' => [],
 
-    // Field handles and attribute names logged as "redacted" instead of their value. Fields of
-    // Craft's Password type are always redacted, listed here or not.
+    // Field handles and attribute names logged as "redacted" instead of their value, in a save's
+    // changes, a new element's values and a sign-in or access event's payload alike.
     'redact' => ['password', 'newPassword', 'verificationCode', 'authKey'],
 
     // Days a row is kept before garbage collection and `craft auditor/prune` remove it. 0 keeps
