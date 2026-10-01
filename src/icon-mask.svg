@@ -1,8 +1,25 @@
-<svg width="40" height="40" viewBox="13 11 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M19 15H38L46 23V37" stroke="#848D94" stroke-width="2.5" stroke-linejoin="round"/>
-<path d="M19 15V51H36" stroke="#848D94" stroke-width="2.5" stroke-linejoin="round"/>
-<path d="M38 15V23H46" stroke="#848D94" stroke-width="2" stroke-linejoin="round"/>
-<path d="M25 28H39M25 34H36M25 40H31" stroke="#848D94" stroke-width="2" stroke-linecap="round"/>
-<circle cx="46" cy="47" r="10" stroke="#848D94" stroke-width="2.5"/>
-<path d="M46 41V47L50 50" stroke="#848D94" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<svg width="40" height="40" viewBox="13 11 48 48" xmlns="http://www.w3.org/2000/svg">
+<path d="M17.75 16.25 L39.25 16.25 L39.25 13.75 L17.75 13.75Z" fill="#848D94"/>
+<path d="M17.75 13.75 L17.75 52.25 L20.25 52.25 L20.25 13.75Z" fill="#848D94"/>
+<path d="M17.75 52.25 L33.50 52.25 L33.50 49.75 L17.75 49.75Z" fill="#848D94"/>
+
+<path d="M44.75 23.00 L44.75 34.00 L47.25 34.00 L47.25 23.00Z" fill="#848D94"/>
+<path d="M36.23 15.00 L46.00 24.77 L47.77 23.00 L38.00 13.23Z" fill="#848D94"/>
+<path d="M37.00 15.00 L37.00 23.00 L39.00 23.00 L39.00 15.00Z" fill="#848D94"/>
+<path d="M37.00 24.00 L47.00 24.00 L47.00 22.00 L37.00 22.00Z" fill="#848D94"/>
+<path d="M25.00 29.00 L39.00 29.00 L39.00 27.00 L25.00 27.00Z" fill="#848D94"/>
+<circle cx="25" cy="28" r="1" fill="#848D94"/>
+<circle cx="39" cy="28" r="1" fill="#848D94"/>
+<path d="M25.00 35.00 L36.00 35.00 L36.00 33.00 L25.00 33.00Z" fill="#848D94"/>
+<circle cx="25" cy="34" r="1" fill="#848D94"/>
+<circle cx="36" cy="34" r="1" fill="#848D94"/>
+<path d="M25.00 41.00 L31.00 41.00 L31.00 39.00 L25.00 39.00Z" fill="#848D94"/>
+<circle cx="25" cy="40" r="1" fill="#848D94"/>
+<circle cx="31" cy="40" r="1" fill="#848D94"/>
+<path fill-rule="evenodd" d="M34.75 47a11.25 11.25 0 1 0 22.5 0a11.25 11.25 0 1 0 -22.5 0ZM37.25 47a8.75 8.75 0 1 0 17.5 0a8.75 8.75 0 1 0 -17.5 0Z" fill="#848D94"/>
+<path d="M45.00 41.00 L45.00 47.00 L47.00 47.00 L47.00 41.00Z" fill="#848D94"/>
+<circle cx="46" cy="41" r="1" fill="#848D94"/>
+<path d="M45.40 47.80 L49.40 50.80 L50.60 49.20 L46.60 46.20Z" fill="#848D94"/>
+<circle cx="46" cy="47" r="1" fill="#848D94"/>
+<circle cx="50" cy="50" r="1" fill="#848D94"/>
 </svg>
