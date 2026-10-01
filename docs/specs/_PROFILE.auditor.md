@@ -16,7 +16,7 @@ project-specific half of a spec's build contract, so individual specs can stay a
 
 | Layer | Choice |
 |---|---|
-| Package | `webdna/craft-auditor`, type `craft-plugin`, handle **`auditor`** |
+| Package | `webdna/auditor`, type `craft-plugin`, handle **`auditor`** |
 | Namespace | `webdna\auditor\` → `src/` |
 | CMS | Craft CMS `^5.6` |
 | Commerce | Optional. `craftcms/commerce` `^5.0` is a **dev** requirement only, for the Commerce test leg |

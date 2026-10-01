@@ -1,5 +1,5 @@
 {
-    "name": "webdna/craft-auditor",
+    "name": "webdna/auditor",
     "description": "An audit log for Craft CMS: who changed what, when, from where and what it said before, plus every sign-in and change of access, in one log.",
     "type": "craft-plugin",
     "keywords": [
@@ -20,9 +20,9 @@
         }
     ],
     "support": {
-        "issues": "https://github.com/webdna/craft-auditor/issues",
-        "source": "https://github.com/webdna/craft-auditor",
-        "docs": "https://github.com/webdna/craft-auditor/blob/main/README.md"
+        "issues": "https://github.com/webdna/auditor/issues",
+        "source": "https://github.com/webdna/auditor",
+        "docs": "https://github.com/webdna/auditor/blob/main/README.md"
     },
     "require": {
         "php": "^8.2",
@@ -67,8 +67,8 @@
         "class": "webdna\\auditor\\Auditor",
         "developer": "webdna",
         "developerUrl": "https://webdna.co.uk",
-        "documentationUrl": "https://github.com/webdna/craft-auditor/blob/main/README.md",
-        "changelogUrl": "https://raw.githubusercontent.com/webdna/craft-auditor/main/CHANGELOG.md"
+        "documentationUrl": "https://github.com/webdna/auditor/blob/main/README.md",
+        "changelogUrl": "https://raw.githubusercontent.com/webdna/auditor/main/CHANGELOG.md"
     },
     "config": {
         "sort-packages": true,
