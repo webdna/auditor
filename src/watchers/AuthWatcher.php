@@ -259,7 +259,8 @@ class AuthWatcher
     /**
      * A failed sign-in: what was typed as the username, and Craft's reason — never the password
      * (BR-17). Against a real account, that account is both subject and actor, so the attempts
-     * read under the person they were made against; otherwise there is neither.
+     * read under the person they were made against; otherwise there is no subject, and the actor is
+     * "Unknown user".
      */
     public function loginFailure(LoginFailureEvent $event): void
     {
@@ -279,6 +280,7 @@ class AuthWatcher
             $this->recordRow(new Event([
                 'family' => Event::FAMILY_AUTH,
                 'event' => self::EVENT_LOGIN_FAILED,
+                'actorLabel' => Event::UNKNOWN_USER,
                 'data' => $this->plugin->getDiffer()->redact($data),
             ]));
         } catch (Throwable $e) {

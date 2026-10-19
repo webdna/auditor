@@ -130,6 +130,7 @@ class AuthWatcherTest extends Unit
         $this->assertInstanceOf(Event::class, $unknown);
         $this->assertNull($unknown->elementId, 'No subject for an account that does not exist');
         $this->assertNull($unknown->actorId);
+        $this->assertSame(Event::UNKNOWN_USER, $unknown->actorLabel, 'Not "System": someone typed it');
         $this->assertSame(['username' => 'nobody@example.com', 'reason' => User::AUTH_INVALID_CREDENTIALS], $unknown->data);
     }
 
