@@ -95,8 +95,13 @@
   function toggleMore(button) {
     const value = button.closest('[data-auditor-truncated]');
     const expanded = button.getAttribute('aria-expanded') === 'true';
-    value.querySelector('.auditor-rest').classList.toggle('hidden', expanded);
-    value.querySelector('.auditor-ellipsis').classList.toggle('hidden', !expanded);
+    if (value.hasAttribute('data-auditor-clip')) {
+      // Rendered rich text is clipped by height, not cut, so its markup stays whole.
+      value.classList.toggle('auditor-clipped', expanded);
+    } else {
+      value.querySelector('.auditor-rest').classList.toggle('hidden', expanded);
+      value.querySelector('.auditor-ellipsis').classList.toggle('hidden', !expanded);
+    }
     button.setAttribute('aria-expanded', expanded ? 'false' : 'true');
     button.textContent = expanded ? button.dataset.more : button.dataset.less;
   }

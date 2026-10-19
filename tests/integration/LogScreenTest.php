@@ -187,6 +187,36 @@ class LogScreenTest extends Unit
     }
 
     /**
+     * BR-30: a rich-text value is shown rendered, after purifying — its markup kept, anything that
+     * could run taken out. A row recorded before values were marked renders when its key is a
+     * rich-text field's handle; a long one is clipped by height with the "Show more" control, its
+     * markup whole.
+     */
+    public function testARichTextValueIsRenderedPurified(): void
+    {
+        $hostile = '<p>Hello <strong>there</strong></p><script>alert(1)</script><img src="x" onerror="alert(2)">';
+        $marked = $this->insert(['data' => ['richText' => ['label' => 'Rich text', 'old' => '<p>Before</p>', 'new' => $hostile, 'html' => true]]]);
+        $detail = $this->view($this->admin, $marked);
+        $this->assertStringContainsString('<p>Before</p>', $detail);
+        $this->assertStringContainsString('<p>Hello <strong>there</strong></p>', $detail);
+        $this->assertStringNotContainsString('<script', $detail);
+        $this->assertStringNotContainsString('alert(1)', $detail);
+        $this->assertStringNotContainsString('onerror', $detail);
+
+        $legacy = $this->insert(['data' => ['richText' => ['label' => 'Rich text', 'old' => '', 'new' => '<p>Old <em>row</em></p>']]]);
+        $this->assertStringContainsString('<p>Old <em>row</em></p>', $this->view($this->admin, $legacy));
+
+        $unmarked = $this->insert(['data' => ['richText' => ['label' => 'Rich text', 'old' => null, 'new' => '<p>Kept as text</p>', 'html' => false]]]);
+        $this->assertStringContainsString('&lt;p&gt;Kept as text&lt;/p&gt;', $this->view($this->admin, $unmarked));
+
+        $long = '<p>' . str_repeat('word ', 200) . '</p>';
+        $clipped = $this->view($this->admin, $this->insert(['data' => ['richText' => ['label' => 'Rich text', 'old' => null, 'new' => $long, 'html' => true]]]));
+        $this->assertStringContainsString('auditor-clipped" data-auditor-truncated data-auditor-clip>', $clipped);
+        $this->assertStringContainsString(str_repeat('word ', 199) . 'word', $clipped, 'Clipped, never cut');
+        $this->assertStringContainsString('data-auditor-more aria-expanded="false"', $clipped);
+    }
+
+    /**
      * BR-12: a nested row stored with Craft's words for an untitled element ("Entry 856") reads
      * as its type and owner — from the element while it exists, from its owner once it is gone. A
      * top-level row with such a label, and a nested row with a real one, are left as stored.
@@ -293,9 +323,9 @@ class LogScreenTest extends Unit
             'secret' => ['label' => 'Secret', 'redacted' => true],
         ]]);
         $this->assertSame([
-            ['key' => 'title', 'label' => 'Title', 'old' => 'Old', 'new' => 'New', 'redacted' => false],
-            ['key' => 'enabled', 'label' => 'Enabled', 'old' => 'Yes', 'new' => 'No', 'redacted' => false],
-            ['key' => 'secret', 'label' => 'Secret', 'old' => '', 'new' => '', 'redacted' => true],
+            ['key' => 'title', 'label' => 'Title', 'old' => 'Old', 'new' => 'New', 'redacted' => false, 'html' => false],
+            ['key' => 'enabled', 'label' => 'Enabled', 'old' => 'Yes', 'new' => 'No', 'redacted' => false, 'html' => false],
+            ['key' => 'secret', 'label' => 'Secret', 'old' => '', 'new' => '', 'redacted' => true, 'html' => false],
         ], $saved['changes']);
 
         $group = $this->describe(['family' => Event::FAMILY_ACCESS, 'event' => AuthWatcher::EVENT_GROUP_SAVED, 'data' => [
@@ -303,7 +333,7 @@ class LogScreenTest extends Unit
             'changes' => ['name' => ['old' => 'Writers', 'new' => 'Editors']],
             'permissions' => ['added' => ['accesscp'], 'removed' => []],
         ]]);
-        $this->assertSame([['key' => 'changes.name', 'label' => 'Name', 'old' => 'Writers', 'new' => 'Editors', 'redacted' => false]], $group['changes']);
+        $this->assertSame([['key' => 'changes.name', 'label' => 'Name', 'old' => 'Writers', 'new' => 'Editors', 'redacted' => false, 'html' => false]], $group['changes']);
         $this->assertSame(
             ['Group' => 'Editors (editors)', 'Permissions added' => 'accesscp', 'Permissions removed' => ''],
             array_column($group['details'], 'value', 'label'),
@@ -319,7 +349,7 @@ class LogScreenTest extends Unit
         $this->assertSame(['Added' => '', 'Removed' => 'editors'], array_column($groups['details'], 'value', 'label'));
 
         $admin = $this->describe(['family' => Event::FAMILY_ACCESS, 'event' => AuthWatcher::EVENT_ADMIN_CHANGED, 'data' => ['admin' => ['old' => false, 'new' => true]]]);
-        $this->assertSame([['key' => 'admin', 'label' => 'Admin', 'old' => 'No', 'new' => 'Yes', 'redacted' => false]], $admin['changes']);
+        $this->assertSame([['key' => 'admin', 'label' => 'Admin', 'old' => 'No', 'new' => 'Yes', 'redacted' => false, 'html' => false]], $admin['changes']);
 
         $mfa = $this->describe(['family' => Event::FAMILY_AUTH, 'event' => AuthWatcher::EVENT_MFA_ENABLED, 'data' => ['method' => \craft\auth\methods\TOTP::class]]);
         $this->assertSame(['Method' => \craft\auth\methods\TOTP::displayName()], array_column($mfa['details'], 'value', 'label'));

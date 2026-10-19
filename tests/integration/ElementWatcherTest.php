@@ -193,6 +193,27 @@ class ElementWatcherTest extends Unit
     }
 
     /**
+     * BR-30: a rich-text field's value is marked as HTML when it is recorded, created or saved, so
+     * the detail can render it; any other field's is not, whatever it holds.
+     */
+    public function testARichTextValueIsMarkedAsHtml(): void
+    {
+        $entry = $this->site->entry('Rich', ['richText' => '<p>One</p>', 'plainText' => '<p>Not HTML</p>']);
+
+        $created = $this->rowsFor($entry)[0];
+        $this->assertSame(['label' => 'Rich text', 'old' => null, 'new' => '<p>One</p>', 'html' => true], $created->data['richText'] ?? null);
+        $this->assertArrayNotHasKey('html', $created->data['plainText'] ?? []);
+        $this->clear();
+
+        $entry = $this->fresh($entry);
+        $entry->setFieldValue('richText', '<p>Two</p>');
+        $this->site->save($entry);
+
+        $saved = $this->rowsFor($entry)[0];
+        $this->assertSame(['label' => 'Rich text', 'old' => '<p>One</p>', 'new' => '<p>Two</p>', 'html' => true], $saved->data['richText'] ?? null);
+    }
+
+    /**
      * An entry made in the CP starts as an unpublished draft; publishing it is its creation — one
      * `created` row, and nothing for the draft's own saves (BR-6, BR-11).
      */
