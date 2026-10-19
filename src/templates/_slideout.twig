@@ -2,8 +2,8 @@
  # One row in full, for the slideout: what happened, who did it and from where, then the fields
  # it changed (Field / Before / After) and the rest of its payload.
  #
- # Nothing logged is rendered unescaped (BR-30), and a value longer than 500 characters shows its
- # start with a control for the rest. The address and browser are already cleared for a viewer
+ # Nothing logged is rendered unescaped (BR-30) — a rich-text field's HTML is rendered only once
+ # purified — and a value longer than 500 characters shows its start with a control for the rest. The address and browser are already cleared for a viewer
  # without the permission to see them (BR-27), so they read "—".
  #}
 {% macro value(text) %}
@@ -19,6 +19,27 @@
         </div>
     {%- else -%}
         <div class="auditor-value">{{ text }}</div>
+    {%- endif -%}
+{% endmacro %}
+
+{#
+ # A rich-text field's value (BR-30): its HTML rendered, after Craft's HTML Purifier has taken out
+ # scripts, event handlers and anything else that could run. A long one is clipped to a few lines,
+ # with the same control as a long text value.
+ #}
+{% macro html(text) %}
+    {%- if text is same as('') -%}
+        <span class="light">—</span>
+    {%- elseif text|length > 500 -%}
+        <div class="auditor-value auditor-html auditor-clipped" data-auditor-truncated data-auditor-clip>
+            <div class="auditor-html-body">{{ text|purify }}</div>
+            <button type="button" class="btn small auditor-more" data-auditor-more aria-expanded="false"
+                data-more="{{ 'Show more'|t('auditor') }}" data-less="{{ 'Show less'|t('auditor') }}">
+                {{- 'Show more'|t('auditor') -}}
+            </button>
+        </div>
+    {%- else -%}
+        <div class="auditor-value auditor-html"><div class="auditor-html-body">{{ text|purify }}</div></div>
     {%- endif -%}
 {% endmacro %}
 
@@ -90,6 +111,9 @@
                         <th scope="row">{{ change.label }}</th>
                         {% if change.redacted %}
                             <td colspan="2">{{ redacted }}</td>
+                        {% elseif change.html %}
+                            <td>{{ _self.html(change.old) }}</td>
+                            <td>{{ _self.html(change.new) }}</td>
                         {% else %}
                             <td>{{ _self.value(change.old) }}</td>
                             <td>{{ _self.value(change.new) }}</td>

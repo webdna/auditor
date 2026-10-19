@@ -33,6 +33,7 @@
         "codeception/module-asserts": "^3.0",
         "codeception/module-yii2": "^1.1",
         "craftcms/ecs": "dev-main",
+        "craftcms/html-field": "^3.4",
         "craftcms/phpstan": "dev-main",
         "phpstan/phpstan": "^2.1",
         "vlucas/phpdotenv": "^5.4"

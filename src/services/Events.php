@@ -721,7 +721,7 @@ class Events extends Component
      * row per item added or removed, and one per field changed on an item.
      *
      * @return array{
-     *     changes: list<array{key: string, label: string, old: string, new: string, redacted: bool}>,
+     *     changes: list<array{key: string, label: string, old: string, new: string, redacted: bool, html: bool}>,
      *     details: list<array{key: string, label: string, value: string, redacted: bool}>,
      *     collections: list<array{key: string, label: string, rows: list<array{id: string, item: string, change: string, old: string, new: string, redacted: bool}>}>,
      * }
@@ -744,6 +744,7 @@ class Events extends Component
                     'old' => $this->format($entry['old'] ?? null),
                     'new' => $this->format($entry['new'] ?? null),
                     'redacted' => ($entry['redacted'] ?? false) === true,
+                    'html' => $this->isHtml((string)$key, $entry),
                 ];
             }
 
@@ -757,6 +758,27 @@ class Events extends Component
         $this->flatten($data, '', '', $described);
 
         return $described;
+    }
+
+    /**
+     * Whether a save's value is a rich-text field's HTML, shown rendered and sanitised rather than
+     * as text: marked so when it was recorded, or — for a row recorded before values were marked —
+     * keyed by the handle of a field that stores HTML. A string from any other field is never
+     * rendered, whatever it contains.
+     *
+     * @param array<array-key, mixed> $entry
+     */
+    private function isHtml(string $key, array $entry): bool
+    {
+        if (array_key_exists('html', $entry)) {
+            return $entry['html'] === true;
+        }
+        if ((!is_string($entry['old'] ?? null) && !is_string($entry['new'] ?? null)) || !preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $key)) {
+            return false;
+        }
+        $field = Craft::$app->getFields()->getFieldByHandle($key);
+
+        return $field !== null && Differ::isHtmlField($field);
     }
 
     /**
@@ -895,6 +917,7 @@ class Events extends Component
                     'old' => $this->format($value['old'] ?? null),
                     'new' => $this->format($value['new'] ?? null),
                     'redacted' => false,
+                    'html' => false,
                 ];
             } elseif ($key === 'group' && is_array($value) && isset($value['name'])) {
                 $name = (string)$value['name'];

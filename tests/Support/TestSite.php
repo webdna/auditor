@@ -44,8 +44,8 @@ use RuntimeException;
  *
  * Handles avoid Craft's reserved words — `link` is one, hence the Link field is `website`.
  *
- * Not built: a CKEditor field — CKEditor is a plugin the harness does not install. It stores an
- * HTML string, as Plain Text does.
+ * `richText` stands in for CKEditor's field: {@see RichTextField}, on the same base class from
+ * the `craftcms/html-field` dev requirement.
  */
 class TestSite
 {
@@ -231,6 +231,7 @@ class TestSite
             ]])),
             'blocks' => $this->field(new Matrix(['name' => 'Blocks', 'handle' => 'blocks', 'entryTypes' => [$this->block, $this->textBlock]])),
             'secret' => $this->field(new PlainText(['name' => 'Secret', 'handle' => 'secret'])),
+            'richText' => $this->field(new RichTextField(['name' => 'Rich text', 'handle' => 'richText'])),
         ];
     }
 

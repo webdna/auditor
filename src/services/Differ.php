@@ -67,6 +67,11 @@ class Differ extends Component
     public const EVENT_DEFINE_ELEMENT_SNAPSHOT = 'defineElementSnapshot';
 
     /**
+     * The base class of CKEditor's field, and of any other field that stores HTML.
+     */
+    public const HTML_FIELD_CLASS = 'craft\\htmlfield\\HtmlField';
+
+    /**
      * Null means Craft's own connection — the one the element's rows were written on.
      */
     public ?Connection $db = null;
@@ -170,7 +175,7 @@ class Differ extends Component
             $old = $before->storedFields[$handle] ?? null;
             $new = $this->fieldValue($element, $field);
             if ($this->fieldChanged($element, $field, $old, $new)) {
-                $changes[$handle] = $this->entry($handle, $this->fieldLabel($field), $old, $new);
+                $changes[$handle] = $this->entry($handle, $this->fieldLabel($field), $old, $new, self::isHtmlField($field));
             }
         }
 
@@ -206,7 +211,7 @@ class Differ extends Component
             }
             $new = $this->fieldValue($element, $field);
             if ($this->canonical($new) !== null) {
-                $values[$field->handle] = $this->entry($field->handle, $this->fieldLabel($field), null, $new);
+                $values[$field->handle] = $this->entry($field->handle, $this->fieldLabel($field), null, $new, self::isHtmlField($field));
             }
         }
 
@@ -561,13 +566,23 @@ class Differ extends Component
     /**
      * @return array<string, mixed>
      */
-    private function entry(string $name, string $label, mixed $old, mixed $new): array
+    private function entry(string $name, string $label, mixed $old, mixed $new, bool $html = false): array
     {
         if ($this->isRedacted($name)) {
             return ['label' => $label, 'redacted' => true];
         }
 
-        return ['label' => $label, 'old' => $old, 'new' => $new];
+        // `html` marks a rich-text field's value, which the detail shows rendered and sanitised.
+        return ['label' => $label, 'old' => $old, 'new' => $new] + ($html ? ['html' => true] : []);
+    }
+
+    /**
+     * Whether a field stores HTML: CKEditor's, or any field built on Craft's shared HTML field
+     * (`craft\htmlfield\HtmlField`), named as a string so the class need not exist.
+     */
+    public static function isHtmlField(FieldInterface $field): bool
+    {
+        return is_a($field, self::HTML_FIELD_CLASS);
     }
 
     private function fieldLabel(FieldInterface $field): string
