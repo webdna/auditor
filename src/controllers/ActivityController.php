@@ -132,7 +132,7 @@ class ActivityController extends Controller
     private function tabLabels(): array
     {
         return [
-            Events::ACTIVITY_CHANGES => Craft::t('auditor', 'Changes they made'),
+            Events::ACTIVITY_CHANGES => Craft::t('auditor', 'Changes made'),
             Events::ACTIVITY_ACCOUNT => Craft::t('auditor', 'Account events'),
         ];
     }

@@ -215,7 +215,7 @@ batches it was part of. It loads only when opened, so it adds nothing to the edi
 
 **Activity** (Pro) is a screen on each user, beside their profile and permissions, with two tabs:
 
-- **Changes they made** — everything that user did.
+- **Changes made** — everything that user did.
 - **Account events** — what happened to their account, whoever did it: sign-ins, failed sign-ins,
   lock-outs, group and permission changes, someone signing in as them.
 
