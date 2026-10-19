@@ -1,5 +1,14 @@
 # Release Notes for Auditor
 
+## 1.0.0 - 2026-10-19
+
+### Changed
+- A block or other nested element with no title of its own is now named by its type and what it belongs to, such as "Text Block in The spring collection", instead of "Entry 856". Rows recorded before this read the same way.
+- Rich-text fields (CKEditor and any other field built on Craft's HTML field) now show their before and after as formatted text in a row's detail, cleaned by Craft's HTML purifier so nothing in them can run. Long ones are cut to a few lines with "Show more".
+- A failed sign-in now says why in words, such as "Wrong password" or "Account locked", in the log and in its detail; the detail keeps Craft's own code beside it.
+- A failed sign-in with a username nobody has shows "Unknown user" as who did it, instead of "System". Rows recorded before this read the same way.
+- The first tab of a user's Activity is now called "Changes made".
+
 ## 1.0.0-beta.1 - 2026-10-01
 
 ### Added

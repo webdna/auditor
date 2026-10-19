@@ -1,7 +1,8 @@
 # Plugin Store listing — draft
 
-**Status:** draft by Claude, 1 Oct 2026. Sam owns the final text, the screenshots and the prices
-(spec Appendix A #1–#3). Nothing here is published until Sam submits it.
+**Status:** drafted by Claude, 1 Oct 2026; text, copy review, icon and prices approved by Sam,
+19 Oct 2026. Sam owns the screenshots and the submission (spec Appendix A #3). Nothing here is
+published until Sam submits it.
 
 ## Fields
 
@@ -13,13 +14,13 @@
 | Short description | Who changed what, when, from where and what it said before — and every sign-in and change of access — in one log. |
 | Categories | Security · Utilities |
 | Keywords | audit, audit log, history, activity, security, changes, sign-in, compliance |
-| Editions | **Lite** — the log (price: **Sam — open**) · **Pro** — adds History and Activity (price: **Sam — open**) |
+| Editions | **Lite** — the log: **$49**, renewal **$19** · **Pro** — adds History and Activity: **$129**, renewal **$39** |
 | Licence | Craft License |
 | Requires | Craft CMS 5.6+, PHP 8.2+; Craft Commerce 5 optional |
 | Documentation URL | https://github.com/webdna/auditor/blob/main/README.md |
 | Changelog URL | https://raw.githubusercontent.com/webdna/auditor/main/CHANGELOG.md |
 | Repository | https://github.com/webdna/auditor (created 1 Oct 2026) |
-| Icon | `src/icon.svg` (draft: a log page with a clock — **Sam to approve or replace**) |
+| Icon | `src/icon.svg` (a log page with a clock — approved by Sam, 19 Oct 2026) |
 
 `composer.json` already names the package, the repository and both URLs above; if the repository
 gets another name, change them there too.
@@ -81,18 +82,20 @@ LLL's pilot (spec 7.2) has the rows for 1, 2, 4 and 5; 3 needs a Commerce site.
 ## Copy for review (Appendix A #2)
 
 The control-panel copy is all in `src/translations/en/auditor.php`. These are the points the build
-flagged as worth a decision:
+flagged as worth a decision, and what Sam decided on 19 Oct 2026 (built the same day):
 
-| Where | Today | Question |
+| Where | Was | Decision |
 |---|---|---|
-| A failed sign-in's reason | The raw code, e.g. `invalid_credentials`, `account_locked` | Map each to words? |
-| A nested entry with no title | "Entry 57113" | Name the owner and field instead? |
-| Own Activity's first tab | "Changes they made" | "Changes you made" on one's own? |
-| A failed sign-in for an unknown username | Actor "System" | Something clearer, e.g. "Unknown"? |
-| A batch in History | "Included in a re-save of N entries" / "Included in a batch of N entries (Resave elements)" | Wording |
-| Deleted user label | "Deleted user #123", stored in English | Fine as an English fixed label? |
+| A failed sign-in's reason | The raw code, e.g. `invalid_credentials`, `account_locked` | Words ("Wrong password", "Account locked", …); the detail keeps the code for support (BR-17) |
+| A nested entry with no title | "Entry 57113" | "<block type> in <owner>", e.g. "Text Block in The spring collection"; old rows read the same (BR-12) |
+| A rich-text field's Before/After | Raw HTML | Rendered, through Craft's HTML Purifier (BR-30) |
+| Activity's first tab | "Changes they made" | "Changes made", everywhere (BR-32) |
+| A failed sign-in for an unknown username | Actor "System" | "Unknown user" (BR-17) |
+| A batch in History | "Included in a re-save of N entries" / "Included in a batch of N entries (Resave elements)" | Kept |
+| Deleted user label | "Deleted user #123", stored in English | Kept |
 
-Behaviour amended during the build that Sam has not yet seen (each is in the spec's change log):
+Behaviour amended during the build — **accepted by Sam, 19 Oct 2026** (each is in the spec's change
+log):
 
 - BR-14: a batched job Craft splits over several queue runs writes one batch row per run, not one.
 - BR-13: an index action on one element is that element's own row, not a batch.
@@ -107,10 +110,10 @@ Behaviour amended during the build that Sam has not yet seen (each is in the spe
 
 ## Before submitting
 
-- [ ] Prices for Lite and Pro (Appendix A #1)
-- [ ] Copy reviewed — the table above and the translations file (Appendix A #2)
+- [x] Prices for Lite and Pro (Appendix A #1) — Lite $49 (renewal $19), Pro $129 (renewal $39)
+- [x] Copy reviewed — the table above and the translations file (Appendix A #2), 19 Oct 2026
 - [ ] GitHub repo, Packagist and the Plugin Store plugin created (Appendix A #3)
-- [ ] Icon approved
+- [x] Icon approved (19 Oct 2026)
 - [ ] Screenshots taken
-- [ ] Privacy-notice question for LLL answered before the pilot leaves local (Appendix A #4)
+- [x] Privacy-notice question for LLL answered before the pilot leaves local (Appendix A #4) — the existing notice covers it
 - [ ] `1.0.0` tagged with a matching `CHANGELOG.md` heading
