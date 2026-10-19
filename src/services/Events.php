@@ -4,7 +4,9 @@ namespace webdna\auditor\services;
 
 use Craft;
 use craft\base\ElementInterface;
+use craft\base\NestedElementInterface;
 use craft\db\Query;
+use craft\db\Table as CraftTable;
 use craft\elements\User;
 use craft\helpers\DateTimeHelper;
 use craft\helpers\Db;
@@ -274,7 +276,7 @@ class Events extends Component
 
         $rows = $query->all();
         $more = count($rows) > $limit;
-        $events = array_map(fn(array $row) => $this->hydrate($row), array_slice($rows, 0, $limit));
+        $events = $this->hydrateAll(array_slice($rows, 0, $limit));
         $last = end($events);
 
         return [
@@ -287,7 +289,7 @@ class Events extends Component
     {
         $row = (new Query())->from(Table::EVENTS)->where(['id' => $id])->one();
 
-        return $row ? $this->hydrate($row) : null;
+        return $row ? $this->hydrateAll([$row])[0] : null;
     }
 
     /**
@@ -337,7 +339,7 @@ class Events extends Component
             }
         }
 
-        $events = array_map(fn(array $row) => $this->hydrate($row), $rows);
+        $events = $this->hydrateAll($rows);
 
         return [
             'groups' => $this->groupByRequest($events, $elementId),
@@ -948,6 +950,99 @@ class Events extends Component
     private function isElementType(string $type): bool
     {
         return class_exists($type) && is_subclass_of($type, ElementInterface::class);
+    }
+
+    /**
+     * @param array<array<string, mixed>> $rows
+     * @return list<Event>
+     */
+    private function hydrateAll(array $rows): array
+    {
+        $events = array_values(array_map(fn(array $row) => $this->hydrate($row), $rows));
+        $this->relabelNested($events);
+
+        return $events;
+    }
+
+    /**
+     * Rows recorded before nested elements were named by their type and owner read as Craft's
+     * words for an untitled element, "Entry 856". Those are named now as a new row would be
+     * (BR-12): from the element, trashed or not, or — once it is gone for good — from its owner.
+     * Costs nothing on a page without such rows; otherwise a query per element type and per
+     * owner type.
+     *
+     * @param list<Event> $events
+     */
+    private function relabelNested(array $events): void
+    {
+        $stale = [];
+        foreach ($events as $event) {
+            if (
+                $event->family === Event::FAMILY_ELEMENT
+                && $event->ownerId !== null
+                && $event->elementId !== null
+                && $event->elementType !== null
+                && $this->isElementType($event->elementType)
+                && preg_match('/^\S.* #?(\d+)$/', (string)$event->elementLabel, $match)
+                && (int)$match[1] === $event->elementId
+            ) {
+                $stale[] = $event;
+            }
+        }
+        if ($stale === []) {
+            return;
+        }
+
+        $byType = [];
+        foreach ($stale as $event) {
+            $byType[$event->elementType][$event->elementId] = true;
+        }
+        $elements = [];
+        foreach ($byType as $type => $ids) {
+            /** @var class-string<ElementInterface> $type */
+            $query = $type::find()->id(array_keys($ids))->site('*')->unique()->status(null)->trashed(null);
+            if (is_subclass_of($type, NestedElementInterface::class)) {
+                $query->with(['owner']);
+            }
+            foreach ($query->all() as $element) {
+                $elements[(int)$element->id] = $element;
+            }
+        }
+
+        $ownerIds = [];
+        foreach ($stale as $event) {
+            if (!isset($elements[$event->elementId])) {
+                $ownerIds[$event->ownerId] = true;
+            }
+        }
+        $owners = [];
+        if ($ownerIds !== []) {
+            $ownersByType = [];
+            foreach ((new Query())->select(['type', 'id'])->from(CraftTable::ELEMENTS)->where(['id' => array_keys($ownerIds)])->all() as $row) {
+                $ownersByType[(string)$row['type']][] = (int)$row['id'];
+            }
+            foreach ($ownersByType as $type => $ids) {
+                if (!$this->isElementType($type)) {
+                    continue;
+                }
+                /** @var class-string<ElementInterface> $type */
+                $query = $type::find()->id($ids)->site('*')->unique()->status(null)->trashed(null);
+                foreach ($query->all() as $owner) {
+                    $owners[(int)$owner->id] = $owner;
+                }
+            }
+        }
+
+        foreach ($stale as $event) {
+            $element = $elements[$event->elementId] ?? null;
+            if ($element !== null) {
+                $event->elementLabel = ElementWatcher::labelFor($element);
+            } elseif (isset($owners[$event->ownerId])) {
+                /** @var class-string<ElementInterface> $type */
+                $type = $event->elementType;
+                $event->elementLabel = ElementWatcher::nestedLabel($type::displayName(), ElementWatcher::labelFor($owners[$event->ownerId]));
+            }
+        }
     }
 
     /**
