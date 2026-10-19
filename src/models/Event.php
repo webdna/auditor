@@ -25,6 +25,12 @@ class Event extends Model
     public const SYSTEM = 'System';
 
     /**
+     * The actor label of a failed sign-in with a username nobody has: someone tried, and who is
+     * not known (BR-17).
+     */
+    public const UNKNOWN_USER = 'Unknown user';
+
+    /**
      * The table's columns, in the order the recorder writes them. `id` is the database's.
      */
     public const COLUMNS = [

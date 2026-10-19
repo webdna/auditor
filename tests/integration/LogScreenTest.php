@@ -220,6 +220,25 @@ class LogScreenTest extends Unit
     }
 
     /**
+     * BR-17: a failed sign-in with a username nobody has names its actor "Unknown user" — also when
+     * it was recorded as "System", before it had words of its own. Any other "System" row stays.
+     */
+    public function testAFailedSignInByNobodyKnownReadsAsUnknownUser(): void
+    {
+        $failed = $this->insert([
+            'family' => Event::FAMILY_AUTH,
+            'event' => AuthWatcher::EVENT_LOGIN_FAILED,
+            'data' => ['username' => 'nobody', 'reason' => 'invalid_credentials'],
+        ]);
+        $locked = $this->insert(['family' => Event::FAMILY_AUTH, 'event' => AuthWatcher::EVENT_LOCKED]);
+
+        $this->assertStringContainsString('Unknown user', $this->view($this->admin, $failed));
+        $this->assertStringContainsString('System', $this->view($this->admin, $locked));
+        $this->assertStringNotContainsString('Unknown user', $this->view($this->admin, $locked));
+        $this->assertSame(Event::UNKNOWN_USER, $this->events->get($failed)?->actorLabel);
+    }
+
+    /**
      * BR-30: a rich-text value is shown rendered, after purifying — its markup kept, anything that
      * could run taken out. A row recorded before values were marked renders when its key is a
      * rich-text field's handle; a long one is clipped by height with the "Show more" control, its

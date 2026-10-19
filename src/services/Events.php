@@ -1132,6 +1132,11 @@ class Events extends Component
         $event->data = is_array($data) ? $data : null;
         $event->dateCreated = DateTimeHelper::toDateTime($row['dateCreated']) ?: null;
 
+        // Recorded as "System" before an unknown username had words of its own (BR-17).
+        if ($event->event === AuthWatcher::EVENT_LOGIN_FAILED && $event->actorId === null && $event->actorLabel === Event::SYSTEM) {
+            $event->actorLabel = Event::UNKNOWN_USER;
+        }
+
         return $event;
     }
 }
