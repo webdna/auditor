@@ -128,7 +128,7 @@ return [
     'See what each user changed and what happened to their account' => 'See what each user changed and what happened to their account',
     'Activity' => 'Activity',
     '{type} in {owner}' => '{type} in {owner}',
-    'Changes they made' => 'Changes they made',
+    'Changes made' => 'Changes made',
     'Account events' => 'Account events',
     'No account events recorded since Auditor was installed.' => 'No account events recorded since Auditor was installed.',
 

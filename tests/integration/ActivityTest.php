@@ -211,7 +211,7 @@ class ActivityTest extends Unit
         $this->assertMatchesRegularExpression(
             '~<div id="auditor-activity-changes"[^>]*data-auditor-tab="changes">.*data-auditor-event="' . $save . '".*</div>\s*<div id="auditor-activity-account" class="auditor-activity hidden"~s',
             $html,
-            'The save under Changes they made, shown first',
+            'The save under Changes made, shown first',
         );
         $this->assertMatchesRegularExpression('~<div id="auditor-activity-account".*data-auditor-event="' . $groups . '".*data-auditor-event="' . $login . '"~s', $html);
         $this->assertStringContainsString('data-auditor-view="auditor/activity/view"', $html);
@@ -357,6 +357,7 @@ class ActivityTest extends Unit
         $screen = $response->getBehavior(CpScreenResponseBehavior::NAME);
         $this->assertNotNull($screen, 'A control panel screen');
         $this->assertSame(['auditor-activity-changes', 'auditor-activity-account'], array_keys($screen->tabs));
+        $this->assertSame(['Changes made', 'Account events'], array_column(array_values($screen->tabs), 'label'), 'The same words on anyone\'s Activity, one\'s own included');
         $content = $screen->contentHtml;
 
         return (string)(is_callable($content) ? $content() : $content);
