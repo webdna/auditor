@@ -178,6 +178,21 @@ class Events extends Component
     ];
 
     /**
+     * A failed sign-in's reason, Craft's `User::AUTH_*` codes (BR-17).
+     */
+    private const REASON_LABELS = [
+        User::AUTH_INVALID_CREDENTIALS => 'Wrong password',
+        User::AUTH_PENDING_VERIFICATION => 'Account not activated yet',
+        User::AUTH_ACCOUNT_LOCKED => 'Account locked',
+        User::AUTH_ACCOUNT_COOLDOWN => 'Account locked for now, after too many attempts',
+        User::AUTH_PASSWORD_RESET_REQUIRED => 'Password reset required',
+        User::AUTH_ACCOUNT_SUSPENDED => 'Account suspended',
+        User::AUTH_NO_CP_ACCESS => 'No control panel access',
+        User::AUTH_NO_CP_OFFLINE_ACCESS => 'Control panel offline',
+        User::AUTH_NO_SITE_OFFLINE_ACCESS => 'Site offline',
+    ];
+
+    /**
      * A structure move's action, `Structures::ACTION_*`.
      */
     private const MOVE_LABELS = [
@@ -722,7 +737,7 @@ class Events extends Component
      *
      * @return array{
      *     changes: list<array{key: string, label: string, old: string, new: string, redacted: bool, html: bool}>,
-     *     details: list<array{key: string, label: string, value: string, redacted: bool}>,
+     *     details: list<array{key: string, label: string, value: string, redacted: bool, code?: string}>,
      *     collections: list<array{key: string, label: string, rows: list<array{id: string, item: string, change: string, old: string, new: string, redacted: bool}>}>,
      * }
      */
@@ -757,7 +772,35 @@ class Events extends Component
 
         $this->flatten($data, '', '', $described);
 
+        // A failed sign-in's reason in words, with Craft's own code beside it for support.
+        if ($event->event === AuthWatcher::EVENT_LOGIN_FAILED) {
+            foreach ($described['details'] as $i => $detail) {
+                if ($detail['key'] === 'reason' && !$detail['redacted'] && is_string($data['reason'] ?? null)) {
+                    $described['details'][$i]['value'] = $this->reasonLabel($event);
+                    $described['details'][$i]['code'] = $data['reason'];
+                }
+            }
+        }
+
         return $described;
+    }
+
+    /**
+     * Why a sign-in failed, in words: Craft's reason code (`User::AUTH_*`) mapped to a phrase, or
+     * the code itself for one this plugin does not know. Empty for any other row. A wrong password
+     * against a username nobody has is worded as that, since Craft gives both the same code.
+     */
+    public function reasonLabel(Event $event): string
+    {
+        $reason = $event->event === AuthWatcher::EVENT_LOGIN_FAILED ? ($event->data['reason'] ?? null) : null;
+        if (!is_string($reason) || $reason === '') {
+            return '';
+        }
+        if ($reason === User::AUTH_INVALID_CREDENTIALS && $event->elementId === null) {
+            return Craft::t('auditor', 'No account with that username');
+        }
+
+        return isset(self::REASON_LABELS[$reason]) ? Craft::t('auditor', self::REASON_LABELS[$reason]) : $reason;
     }
 
     /**

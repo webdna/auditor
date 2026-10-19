@@ -21,7 +21,8 @@
     </td>
     <td>
         {{ auditor.eventLabel(event.event) }}
-        <div class="light smalltext">{{ auditor.familyLabel(event.family) }}</div>
+        {% set reason = auditor.reasonLabel(event) %}
+        <div class="light smalltext">{{ reason ? reason : auditor.familyLabel(event.family) }}</div>
     </td>
     <td>
         {% if history and event.event == 'bulk' %}

@@ -157,7 +157,10 @@
         <dl class="auditor-facts auditor-payload">
             {% for detail in described.details %}
                 <dt data-auditor-field="{{ detail.key }}">{{ detail.label }}</dt>
-                <dd>{{ detail.redacted ? redacted : _self.value(detail.value) }}</dd>
+                <dd>
+                    {{- detail.redacted ? redacted : _self.value(detail.value) -}}
+                    {%- if detail.code ?? false %}<div class="light code" data-auditor-code>{{ detail.code }}</div>{% endif -%}
+                </dd>
             {% endfor %}
         </dl>
     {% endif %}

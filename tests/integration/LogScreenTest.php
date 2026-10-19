@@ -187,6 +187,39 @@ class LogScreenTest extends Unit
     }
 
     /**
+     * BR-17: a failed sign-in's reason reads as words in its row and its detail, and the detail
+     * keeps Craft's code beside them. Craft gives a wrong password and an unknown username the same
+     * code; the words tell them apart. A code this plugin does not know is shown as it is.
+     */
+    public function testAFailedSignInReasonReadsAsWords(): void
+    {
+        $failed = fn(?int $subject, string $reason) => $this->insert([
+            'family' => Event::FAMILY_AUTH,
+            'event' => AuthWatcher::EVENT_LOGIN_FAILED,
+            'elementId' => $subject,
+            'elementType' => $subject ? User::class : null,
+            'elementLabel' => $subject ? 'member@example.com' : null,
+            'data' => ['username' => 'member', 'reason' => $reason],
+        ]);
+        $wrong = $failed((int)$this->viewer->id, 'invalid_credentials');
+        $unknown = $failed(null, 'invalid_credentials');
+        $cooldown = $failed((int)$this->viewer->id, 'account_cooldown');
+        $other = $failed((int)$this->viewer->id, 'some_new_code');
+
+        $detail = $this->view($this->admin, $wrong);
+        $this->assertStringContainsString('Wrong password', $detail);
+        $this->assertStringContainsString('<div class="light code" data-auditor-code>invalid_credentials</div>', $detail);
+        $this->assertStringContainsString('No account with that username', $this->view($this->admin, $unknown));
+        $this->assertStringContainsString('Account locked for now, after too many attempts', $this->view($this->admin, $cooldown));
+        $this->assertStringContainsString('some_new_code', $this->view($this->admin, $other));
+
+        $rows = $this->page($this->admin, [])['html'];
+        foreach (['Wrong password', 'No account with that username', 'Account locked for now, after too many attempts', 'some_new_code'] as $words) {
+            $this->assertStringContainsString("<div class=\"light smalltext\">$words</div>", $rows);
+        }
+    }
+
+    /**
      * BR-30: a rich-text value is shown rendered, after purifying — its markup kept, anything that
      * could run taken out. A row recorded before values were marked renders when its key is a
      * rich-text field's handle; a long one is clipped by height with the "Show more" control, its
