@@ -307,6 +307,32 @@ class ElementWatcherTest extends Unit
         $this->assertCount(1, $rows);
         $this->assertSame((int)$owner->id, $rows[0]->ownerId);
         $this->assertSame(['blockText'], $this->keys($rows[0]));
+        $this->assertSame('Block', $rows[0]->elementLabel, 'A titled block keeps its title');
+    }
+
+    /**
+     * BR-12: a nested entry with no title is named by its type and its owner, whether it is saved
+     * through its owner (which it already has) or on its own (which reads it).
+     */
+    public function testAnUntitledNestedEntryIsNamedByItsTypeAndOwner(): void
+    {
+        $owner = $this->site->entry('The spring collection', ['blocks' => [
+            'new1' => ['type' => 'textBlock', 'fields' => ['blockText' => 'One']],
+        ]]);
+
+        $nested = array_values(array_filter($this->recorder->getReady(), fn(Event $row) => $row->ownerId !== null));
+        $this->assertCount(1, $nested);
+        $this->assertSame('Text block in The spring collection', $nested[0]->elementLabel);
+        $this->clear();
+
+        $block = Entry::find()->ownerId($owner->id)->fieldId($this->site->fields['blocks']->id)->one();
+        $this->assertInstanceOf(Entry::class, $block);
+        $block->setFieldValue('blockText', 'Two');
+        $this->site->save($block);
+
+        $rows = $this->recorder->getReady();
+        $this->assertCount(1, $rows);
+        $this->assertSame('Text block in The spring collection', $rows[0]->elementLabel);
     }
 
     /**

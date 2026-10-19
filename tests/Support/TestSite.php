@@ -64,6 +64,12 @@ class TestSite
 
     public EntryType $block;
 
+    /**
+     * A Matrix block type with no title field, as most blocks on a real site are: its entries
+     * are named by their type and owner (BR-12).
+     */
+    public EntryType $textBlock;
+
     public Volume $volume;
 
     public static function build(): self
@@ -199,6 +205,7 @@ class TestSite
     {
         $blockText = $this->field(new PlainText(['name' => 'Block text', 'handle' => 'blockText']));
         $this->block = $this->entryType('block', 'Block', [$blockText]);
+        $this->textBlock = $this->entryType('textBlock', 'Text block', [$blockText], false);
 
         $this->fields = [
             'plainText' => $this->field(new PlainText(['name' => 'Plain text', 'handle' => 'plainText'])),
@@ -222,7 +229,7 @@ class TestSite
                 'col1' => ['heading' => 'Name', 'handle' => 'name', 'type' => 'singleline'],
                 'col2' => ['heading' => 'Count', 'handle' => 'count', 'type' => 'number'],
             ]])),
-            'blocks' => $this->field(new Matrix(['name' => 'Blocks', 'handle' => 'blocks', 'entryTypes' => [$this->block]])),
+            'blocks' => $this->field(new Matrix(['name' => 'Blocks', 'handle' => 'blocks', 'entryTypes' => [$this->block, $this->textBlock]])),
             'secret' => $this->field(new PlainText(['name' => 'Secret', 'handle' => 'secret'])),
         ];
     }
@@ -254,17 +261,17 @@ class TestSite
     /**
      * @param FieldInterface[] $fields
      */
-    private function entryType(string $handle, string $name, array $fields): EntryType
+    private function entryType(string $handle, string $name, array $fields, bool $title = true): EntryType
     {
         $layout = new FieldLayout(['type' => Entry::class]);
         $tab = new FieldLayoutTab(['name' => 'Content', 'layout' => $layout]);
         $tab->setElements([
-            new EntryTitleField(),
+            ...($title ? [new EntryTitleField()] : []),
             ...array_map(fn(FieldInterface $field) => new CustomField($field), $fields),
         ]);
         $layout->setTabs([$tab]);
 
-        $type = new EntryType(['name' => $name, 'handle' => $handle]);
+        $type = new EntryType(['name' => $name, 'handle' => $handle, 'hasTitleField' => $title]);
         $type->setFieldLayout($layout);
         $this->ok(Craft::$app->getEntries()->saveEntryType($type), $type);
 

@@ -6,6 +6,7 @@ use Closure;
 use Craft;
 use craft\base\ElementInterface;
 use craft\base\NestedElementInterface;
+use craft\elements\Entry;
 use craft\events\BulkOpEvent;
 use craft\events\ElementActionEvent;
 use craft\events\ElementEvent;
@@ -59,6 +60,12 @@ class ElementWatcher
     public const EVENT_RESTORED = 'restored';
     public const EVENT_MOVED = 'moved';
     public const EVENT_BULK = 'bulk';
+
+    /**
+     * How many owners up an untitled nested element's label climbs: a block in a block in an
+     * entry reads in full; anything deeper is named by Craft's own words.
+     */
+    private const LABEL_DEPTH = 3;
 
     /**
      * The operation a candidate batch is named after: what its first element went through.
@@ -467,9 +474,62 @@ class ElementWatcher
 
     private function label(ElementInterface $element): string
     {
+        return self::labelFor($element);
+    }
+
+    /**
+     * What a row calls an element: its title, or for a nested element without one — a Matrix
+     * block, an address — its type and its owner's label, "Text block in The spring collection"
+     * (BR-12). Craft's own words for an untitled element are its class and id ("Entry 856").
+     *
+     * Asking for the owner reads it when it is not loaded yet; a nested save made through its owner
+     * already has it. Stored in English, like "System", with the type's name as the site has it.
+     */
+    public static function labelFor(ElementInterface $element, int $depth = 0): string
+    {
+        $title = $element->title ?? null;
+        if (is_string($title) && trim($title) !== '') {
+            return trim($title);
+        }
+
+        if ($element instanceof NestedElementInterface && $depth < self::LABEL_DEPTH) {
+            try {
+                $owner = $element->getOwner();
+            } catch (Throwable) {
+                $owner = null;
+            }
+            if ($owner !== null) {
+                return self::nestedLabel(self::typeName($element), self::labelFor($owner, $depth + 1));
+            }
+        }
+
         $label = trim((string)$element);
 
         return $label !== '' ? $label : sprintf('%s #%s', $element::displayName(), $element->id);
+    }
+
+    /**
+     * "<type> in <owner>", in English: the label is stored, and read by anyone.
+     */
+    public static function nestedLabel(string $type, string $owner): string
+    {
+        return Craft::t('auditor', '{type} in {owner}', ['type' => $type, 'owner' => $owner], 'en');
+    }
+
+    /**
+     * An entry's type by its name; any other element by its type's.
+     */
+    private static function typeName(ElementInterface $element): string
+    {
+        if ($element instanceof Entry) {
+            try {
+                return $element->getType()->name;
+            } catch (Throwable) {
+                // A type deleted since: the element type's name below.
+            }
+        }
+
+        return $element::displayName();
     }
 
     private function fail(string $message, Throwable $e): void

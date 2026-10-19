@@ -187,6 +187,40 @@ class LogScreenTest extends Unit
     }
 
     /**
+     * BR-12: a nested row stored with Craft's words for an untitled element ("Entry 856") reads
+     * as its type and owner — from the element while it exists, from its owner once it is gone. A
+     * top-level row with such a label, and a nested row with a real one, are left as stored.
+     */
+    public function testAStoredUntitledNestedLabelReadsAsItsTypeAndOwner(): void
+    {
+        $owner = $this->site->entry('The spring collection', ['blocks' => [
+            'new1' => ['type' => 'textBlock', 'fields' => ['blockText' => 'One']],
+        ]]);
+        $block = Entry::find()->ownerId($owner->id)->fieldId($this->site->fields['blocks']->id)->one();
+        $this->assertInstanceOf(Entry::class, $block);
+        Craft::$app->getDb()->createCommand()->delete(Table::EVENTS)->execute();
+
+        $nested = fn(int $id, string $label) => $this->insert([
+            'elementId' => $id, 'elementType' => Entry::class, 'ownerId' => $owner->id, 'elementLabel' => $label,
+        ]);
+        $live = $nested((int)$block->id, "Entry $block->id");
+        $gone = $nested(999999, 'Entry 999999');
+        $titled = $nested(999998, 'A titled block');
+        $topLevel = $this->insert(['elementId' => 999997, 'elementType' => Entry::class, 'elementLabel' => 'Entry 999997']);
+
+        $rows = $this->page($this->admin, [])['html'];
+        $this->assertStringContainsString('Text block in The spring collection', $rows);
+        $this->assertStringContainsString('Entry in The spring collection', $rows);
+        $this->assertStringContainsString('A titled block', $rows);
+        $this->assertStringContainsString('Entry 999997', $rows);
+
+        $this->assertStringContainsString('Text block in The spring collection', $this->view($this->admin, $live));
+        $this->assertStringContainsString('Entry in The spring collection', $this->view($this->admin, $gone));
+        $this->assertStringContainsString('A titled block', $this->view($this->admin, $titled));
+        $this->assertStringContainsString('Entry 999997', $this->view($this->admin, $topLevel));
+    }
+
+    /**
      * BR-29: each filter narrows the log, and the search matches the subject and actor labels
      * but never a logged value.
      */
