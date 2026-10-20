@@ -108,7 +108,8 @@ class AuthWatcherTest extends Unit
         $this->assertCount(1, $locked, 'One lock-out');
         $this->assertSame((int)$member->id, $locked[0]->elementId);
         $this->assertNull($locked[0]->actorId, 'Craft locked it, nobody signed in');
-        $this->assertSame(Event::SYSTEM, $locked[0]->actorLabel);
+        // The attempt that locked it was a visitor's, on the site's sign-in form (§4, #6).
+        $this->assertSame(Event::VISITOR, $locked[0]->actorLabel);
         $this->assertCount($max, $this->rows(AuthWatcher::EVENT_LOGIN_FAILED), 'The locking attempt is itself recorded');
 
         // A site that hides lock-outs from visitors tells them the password was wrong; the log keeps

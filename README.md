@@ -71,9 +71,13 @@ Moving from Lite to Pro shows History and Activity for everything already record
 ## What is recorded
 
 Every row says who did it (the **actor**), what it happened to (the **subject**), when, from which
-context — control panel, site, console or queue, with the route, command or job — and, for web
-requests, the IP address and browser. Rows written in one request share a request id, so the log
-can show "everything else this request did".
+context — control panel, site, console or queue, with the route, command or job (or, for a PHP
+script that boots Craft itself, the script's file name) — and, for web requests, the IP address and
+browser. Rows written in one request share a request id, so the log can show "everything else this
+request did".
+
+With nobody signed in, the actor is **Visitor** on a site request (a form a visitor posts) and
+**System** everywhere else (a command, a queue job, the control panel's sign-in screen).
 
 ### Content changes
 
@@ -110,8 +114,10 @@ blocks reads as one change with three beneath it.
 An operation is recorded as **one batch row** when it is a resave (`resave/*` commands, or a resave
 Craft queues after a settings change), a batched queue job, an element-index action on more than one
 element, or any single operation touching more than `bulkThreshold` top-level elements (10 by
-default). The row says what the operation was, the element type, how many, and who ran it; every
-element it covered is listed, so each one's History reads "Included in a re-save of 1,240 entries".
+default). A nested entry counts as the top-level element it belongs to, however deep its blocks go,
+so re-saving two pages is a re-save of 2 entries. The row says what the operation was, the element
+type, how many, and who ran it; every element it covered is listed, so each one's History reads
+"Included in a re-save of 1,240 entries" — whether the resave ran as a command or as Craft's queue job.
 
 A batch takes no before-snapshots and records no per-element changes, which is what keeps a large
 resave fast. Set `recordBulkDiffs` to record each element in full instead.

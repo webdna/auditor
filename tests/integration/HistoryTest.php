@@ -10,6 +10,7 @@ use craft\elements\Entry;
 use craft\elements\User;
 use craft\helpers\Db;
 use craft\helpers\StringHelper;
+use craft\queue\jobs\PropagateElements;
 use craft\queue\jobs\ResaveElements;
 use craft\services\UserPermissions;
 use DateTime;
@@ -282,8 +283,11 @@ class HistoryTest extends Unit
             'event' => ElementWatcher::EVENT_BULK,
             'data' => ['operation' => $operation, 'count' => $count, 'elementType' => Entry::class],
         ]));
-        $this->assertSame('Included in a batch of 4 entries (Resave elements)', $summary(ResaveElements::class, 4));
+        $this->assertSame('Included in a batch of 4 entries (Propagate elements)', $summary(PropagateElements::class, 4));
         $this->assertSame('Included in a batch of 1 entry (Set status)', $summary(SetStatus::class, 1));
+        // Craft's resave job was recorded by its class before 9.6; it reads as the command's does (#6).
+        $this->assertSame('Included in a re-save of 4 entries', $summary(ResaveElements::class, 4));
+        $this->assertSame('Included in a re-save of 4 entries', $summary('resave', 4));
     }
 
     /**

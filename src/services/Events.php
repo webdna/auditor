@@ -14,6 +14,7 @@ use craft\helpers\Json;
 use craft\helpers\StringHelper;
 use craft\helpers\UrlHelper;
 use craft\models\UserGroup;
+use craft\queue\jobs\ResaveElements;
 use craft\web\View;
 use DateInterval;
 use DateTimeZone;
@@ -174,10 +175,12 @@ class Events extends Component
     private const CLASS_KEYS = ['elementType', 'method', 'operation'];
 
     /**
-     * A batch's operation when it is one of the element service's own (BR-14).
+     * A batch's operation when it is one of the element service's own (BR-14). Craft's resave job
+     * was recorded by its class before it was recorded as `resave`; it reads the same.
      */
     private const OPERATION_LABELS = [
         'resave' => 'Re-save',
+        ResaveElements::class => 'Re-save',
         'create' => 'Create',
         'save' => 'Save',
         'delete' => 'Delete',

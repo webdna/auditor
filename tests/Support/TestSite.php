@@ -76,6 +76,12 @@ class TestSite
      */
     public EntryType $headedBlock;
 
+    /**
+     * A Matrix block type holding blocks of its own (`innerBlocks`), so a page's blocks can be two
+     * levels deep.
+     */
+    public EntryType $sectionBlock;
+
     public Volume $volume;
 
     public static function build(): self
@@ -214,6 +220,8 @@ class TestSite
         $this->textBlock = $this->entryType('textBlock', 'Text block', [$blockText], false);
         $heading = $this->field(new PlainText(['name' => 'Heading', 'handle' => 'heading']));
         $this->headedBlock = $this->entryType('headedBlock', 'Headed block', [$heading], false, '{heading}');
+        $innerBlocks = $this->field(new Matrix(['name' => 'Inner blocks', 'handle' => 'innerBlocks', 'entryTypes' => [$this->block]]));
+        $this->sectionBlock = $this->entryType('sectionBlock', 'Section block', [$innerBlocks]);
 
         $this->fields = [
             'plainText' => $this->field(new PlainText(['name' => 'Plain text', 'handle' => 'plainText'])),
@@ -237,7 +245,7 @@ class TestSite
                 'col1' => ['heading' => 'Name', 'handle' => 'name', 'type' => 'singleline'],
                 'col2' => ['heading' => 'Count', 'handle' => 'count', 'type' => 'number'],
             ]])),
-            'blocks' => $this->field(new Matrix(['name' => 'Blocks', 'handle' => 'blocks', 'entryTypes' => [$this->block, $this->textBlock, $this->headedBlock]])),
+            'blocks' => $this->field(new Matrix(['name' => 'Blocks', 'handle' => 'blocks', 'entryTypes' => [$this->block, $this->textBlock, $this->headedBlock, $this->sectionBlock]])),
             'secret' => $this->field(new PlainText(['name' => 'Secret', 'handle' => 'secret'])),
             'richText' => $this->field(new RichTextField(['name' => 'Rich text', 'handle' => 'richText'])),
         ];

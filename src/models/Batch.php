@@ -46,6 +46,14 @@ class Batch
      */
     private array $ids = [];
 
+    /**
+     * Each owner id a nested element named, to the top-level element it belongs to, so a batch
+     * walks each owner's chain once.
+     *
+     * @var array<int, int>
+     */
+    public array $roots = [];
+
     private ?string $elementType = null;
 
     private bool $mixed = false;

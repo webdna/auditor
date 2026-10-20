@@ -188,6 +188,30 @@ class BatchesTest extends Unit
     }
 
     /**
+     * BR-13 (#6): a block in a block counts toward the top-level element it belongs to, not the
+     * block that holds it. Re-saving two pages with blocks two levels deep, as
+     * `resave/entries --elementId=A,B` does, is a re-save of 2 entries; and saving one page with
+     * eleven blocks that each hold a block is that page's own rows, not a batch of 12.
+     */
+    public function testBlocksInBlocksCountTowardTheTopLevelElement(): void
+    {
+        $pages = [$this->deepOwner('Page A', 3, 2), $this->deepOwner('Page B', 3, 2)];
+        $this->clear();
+
+        Craft::$app->getElements()->resaveElements(Entry::find()->id($this->ids($pages))->status(null));
+        $rows = $this->recorder->getReady();
+        $this->assertCount(1, $rows);
+        $this->assertSame(['operation' => 'resave', 'count' => 2, 'elementType' => Entry::class], $rows[0]->data);
+        $this->assertEqualsCanonicalizing($this->ids($pages), array_column($rows[0]->elements, 0), 'Listed through the pages, never a block');
+        $this->clear();
+
+        Craft::$app->getElements()->ensureBulkOp(fn() => $this->deepOwner('Page C', 11, 1));
+        $rows = $this->recorder->getReady();
+        $this->assertNotContains(ElementWatcher::EVENT_BULK, array_column($rows, 'event'));
+        $this->assertCount(23, $rows, 'The page, its eleven blocks and their eleven blocks, each its own row');
+    }
+
+    /**
      * BR-13: deleting more than the threshold in one bulk operation is a batch named for the delete.
      */
     public function testElevenDeletionsInOneBulkOperationAreOneBatch(): void
@@ -251,8 +275,9 @@ class BatchesTest extends Unit
     }
 
     /**
-     * BR-13, through a real queue run: a batched element job is a batch in each of its runs, named
-     * for the job, in the queue context. Craft splits 25 entries at a batch size of 10 into three
+     * BR-13, through a real queue run: a batched element job is a batch in each of its runs, in the
+     * queue context — Craft's resave job named a re-save, as the command is (#6), with the job's
+     * class as the context's detail. Craft splits 25 entries at a batch size of 10 into three
      * runs, so three rows, which between them list all 25.
      */
     public function testABatchedJobIsOneBatchRowPerRun(): void
@@ -271,8 +296,9 @@ class BatchesTest extends Unit
         $stored = $this->stored();
         $this->assertCount(3, $stored);
         $this->assertSame([10, 10, 5], array_map(fn(array $row) => json_decode($row['data'], true)['count'], $stored));
-        $this->assertSame([ResaveElements::class], array_values(array_unique(array_map(fn(array $row) => json_decode($row['data'], true)['operation'], $stored))));
+        $this->assertSame(['resave'], array_values(array_unique(array_map(fn(array $row) => json_decode($row['data'], true)['operation'], $stored))));
         $this->assertSame([Settings::CONTEXT_QUEUE], array_values(array_unique(array_column($stored, 'context'))));
+        $this->assertSame([ResaveElements::class], array_values(array_unique(array_column($stored, 'contextDetail'))));
         $listed = array_merge(...array_map(fn(array $row) => $this->listed((int)$row['id']), $stored));
         $this->assertEqualsCanonicalizing($this->ids($entries), $listed);
         $this->assertSame(0, $this->differ->snapshots);
@@ -332,6 +358,23 @@ class BatchesTest extends Unit
         $values = [];
         for ($i = 1; $i <= $blocks; $i++) {
             $values["new$i"] = ['type' => 'block', 'title' => "Block $i", 'fields' => ['blockText' => "Text $i"]];
+        }
+
+        return $this->site->entry($title, ['blocks' => $values]);
+    }
+
+    /**
+     * A page whose blocks each hold blocks of their own: two levels deep.
+     */
+    private function deepOwner(string $title, int $sections, int $blocks): Entry
+    {
+        $values = [];
+        for ($i = 1; $i <= $sections; $i++) {
+            $inner = [];
+            for ($j = 1; $j <= $blocks; $j++) {
+                $inner["new$j"] = ['type' => 'block', 'title' => "Block $i.$j", 'fields' => ['blockText' => "Text $i.$j"]];
+            }
+            $values["new$i"] = ['type' => 'sectionBlock', 'title' => "Section $i", 'fields' => ['innerBlocks' => $inner]];
         }
 
         return $this->site->entry($title, ['blocks' => $values]);
