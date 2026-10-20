@@ -70,6 +70,12 @@ class TestSite
      */
     public EntryType $textBlock;
 
+    /**
+     * A Matrix block type whose title is generated from its `heading` field (`{heading}`), with
+     * no title field: a redacted heading must not come through its title (BR-41).
+     */
+    public EntryType $headedBlock;
+
     public Volume $volume;
 
     public static function build(): self
@@ -206,6 +212,8 @@ class TestSite
         $blockText = $this->field(new PlainText(['name' => 'Block text', 'handle' => 'blockText']));
         $this->block = $this->entryType('block', 'Block', [$blockText]);
         $this->textBlock = $this->entryType('textBlock', 'Text block', [$blockText], false);
+        $heading = $this->field(new PlainText(['name' => 'Heading', 'handle' => 'heading']));
+        $this->headedBlock = $this->entryType('headedBlock', 'Headed block', [$heading], false, '{heading}');
 
         $this->fields = [
             'plainText' => $this->field(new PlainText(['name' => 'Plain text', 'handle' => 'plainText'])),
@@ -229,7 +237,7 @@ class TestSite
                 'col1' => ['heading' => 'Name', 'handle' => 'name', 'type' => 'singleline'],
                 'col2' => ['heading' => 'Count', 'handle' => 'count', 'type' => 'number'],
             ]])),
-            'blocks' => $this->field(new Matrix(['name' => 'Blocks', 'handle' => 'blocks', 'entryTypes' => [$this->block, $this->textBlock]])),
+            'blocks' => $this->field(new Matrix(['name' => 'Blocks', 'handle' => 'blocks', 'entryTypes' => [$this->block, $this->textBlock, $this->headedBlock]])),
             'secret' => $this->field(new PlainText(['name' => 'Secret', 'handle' => 'secret'])),
             'richText' => $this->field(new RichTextField(['name' => 'Rich text', 'handle' => 'richText'])),
         ];
@@ -262,7 +270,7 @@ class TestSite
     /**
      * @param FieldInterface[] $fields
      */
-    private function entryType(string $handle, string $name, array $fields, bool $title = true): EntryType
+    private function entryType(string $handle, string $name, array $fields, bool $title = true, ?string $titleFormat = null): EntryType
     {
         $layout = new FieldLayout(['type' => Entry::class]);
         $tab = new FieldLayoutTab(['name' => 'Content', 'layout' => $layout]);
@@ -272,7 +280,7 @@ class TestSite
         ]);
         $layout->setTabs([$tab]);
 
-        $type = new EntryType(['name' => $name, 'handle' => $handle, 'hasTitleField' => $title]);
+        $type = new EntryType(['name' => $name, 'handle' => $handle, 'hasTitleField' => $title, 'titleFormat' => $titleFormat]);
         $type->setFieldLayout($layout);
         $this->ok(Craft::$app->getEntries()->saveEntryType($type), $type);
 

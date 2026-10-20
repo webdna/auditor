@@ -484,12 +484,17 @@ class ElementWatcher
      *
      * Asking for the owner reads it when it is not loaded yet; a nested save made through its owner
      * already has it. Stored in English, like "System", with the type's name as the site has it.
+     *
+     * A title generated from a layout holding a redacted field may hold the redacted value, so the
+     * element is named by its type and id instead, "Entry #123" (BR-41) — as an owner too.
      */
     public static function labelFor(ElementInterface $element, int $depth = 0): string
     {
         $title = $element->title ?? null;
         if (is_string($title) && trim($title) !== '') {
-            return trim($title);
+            return Auditor::getInstance()?->getDiffer()->hidesTitle($element)
+                ? self::idLabel($element)
+                : trim($title);
         }
 
         if ($element instanceof NestedElementInterface && $depth < self::LABEL_DEPTH) {
@@ -505,7 +510,12 @@ class ElementWatcher
 
         $label = trim((string)$element);
 
-        return $label !== '' ? $label : sprintf('%s #%s', $element::displayName(), $element->id);
+        return $label !== '' ? $label : self::idLabel($element);
+    }
+
+    private static function idLabel(ElementInterface $element): string
+    {
+        return sprintf('%s #%s', $element::displayName(), $element->id);
     }
 
     /**

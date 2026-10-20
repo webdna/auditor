@@ -357,6 +357,57 @@ class ElementWatcherTest extends Unit
     }
 
     /**
+     * TS-5 step 3, BR-41 (#4): a title generated from a redacted field is redacted with it, and so
+     * is the slug made from that title; the row is labelled by type and id, on its creation, its
+     * save and its deletion, so the value appears nowhere. An empty generated title is still named
+     * by its type and owner (BR-12), and without redaction the title is the label as before.
+     */
+    public function testAGeneratedTitleIsRedactedWithTheFieldItIsMadeFrom(): void
+    {
+        $owner = $this->site->entry('Owner', ['blocks' => [
+            'new1' => ['type' => 'headedBlock', 'fields' => ['heading' => 'Plain heading']],
+        ]]);
+        $this->assertSame('Plain heading', $this->rowsFor($this->block($owner))[0]->elementLabel, 'Not redacted: the title is the label');
+        $this->clear();
+
+        $this->plugin->getSettings()->redact = ['heading', 'blockText'];
+
+        $owner = $this->site->entry('Second owner', ['blocks' => [
+            'new1' => ['type' => 'headedBlock', 'fields' => ['heading' => 'Hidden one']],
+            'new2' => ['type' => 'textBlock', 'fields' => ['blockText' => 'Also hidden']],
+        ]]);
+        $blocks = Entry::find()->ownerId($owner->id)->fieldId($this->site->fields['blocks']->id)->all();
+        $this->assertCount(2, $blocks);
+        [$headed, $text] = $blocks;
+        $label = sprintf('Entry #%s', $headed->id);
+        $created = $this->rowsFor($headed);
+        $this->assertCount(1, $created);
+        $this->assertSame($label, $created[0]->elementLabel);
+        $this->assertSame(['label' => 'Title', 'redacted' => true], $created[0]->data['title'] ?? null);
+        $this->assertSame(['label' => 'Heading', 'redacted' => true], $created[0]->data['heading'] ?? null);
+        $this->assertSame('Text block in Second owner', $this->rowsFor($text)[0]->elementLabel, 'An empty generated title is named by BR-12');
+        $this->clear();
+
+        $headed->setFieldValue('heading', 'Hidden two');
+        $this->site->save($headed);
+        $saved = $this->rowsFor($headed);
+        $this->assertCount(1, $saved);
+        $this->assertSame($label, $saved[0]->elementLabel);
+        $this->assertSame(['label' => 'Title', 'redacted' => true], $saved[0]->data['title'] ?? null);
+        $this->clear();
+
+        Craft::$app->getElements()->deleteElement($headed);
+        $deleted = $this->rowsFor($headed);
+        $this->assertSame(ElementWatcher::EVENT_DELETED, $deleted[0]->event ?? null);
+        $this->assertSame($label, $deleted[0]->elementLabel);
+
+        foreach ([...$created, ...$saved, ...$deleted] as $row) {
+            $json = (string)json_encode([$row->elementLabel, $row->data]);
+            $this->assertDoesNotMatchRegularExpression('/hidden[ -](one|two)/i', $json, 'The heading, as a title or a slug');
+        }
+    }
+
+    /**
      * Deleting and restoring are recorded with the label kept, so the row still reads once the
      * subject is gone (TN-5); a draft's deletion is not (TN-8).
      */
@@ -501,6 +552,14 @@ class ElementWatcherTest extends Unit
         $this->site->save($node);
 
         return $node;
+    }
+
+    private function block(Entry $owner): Entry
+    {
+        $block = Entry::find()->ownerId($owner->id)->fieldId($this->site->fields['blocks']->id)->one();
+        $this->assertInstanceOf(Entry::class, $block);
+
+        return $block;
     }
 
     private function fresh(Entry $entry): Entry

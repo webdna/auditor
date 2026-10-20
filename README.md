@@ -188,6 +188,11 @@ return [
 the payload of sign-in and access rows. A redacted value is recorded as having changed, so the log
 still shows *that* a tax number was edited, and by whom, without keeping the number.
 
+A title Craft generates from a title format (an entry type, or a Commerce product or variant type,
+with no title field) can carry any value it is made from. So when such an element's field layout
+holds a redacted field, or its type a redacted attribute, its title and slug are redacted too, and
+its rows name it by type and id, such as "Entry #123", rather than by its title.
+
 ## Permissions
 
 | Permission | Lets someone |
