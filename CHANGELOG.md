@@ -1,6 +1,6 @@
 # Release Notes for Auditor
 
-## Unreleased
+## 1.1.0 - 2026-10-20
 
 ### Added
 - Craft Commerce's catalog pricing rules and discounts are now recorded: created with their values, saved with each setting that changed, before and after (dates, how the price is applied, conditions, limits, whether a discount stops later ones), and deleted. A discount's coupon codes are counted as added and removed, never recorded. Both appear in the log's type filter. ([#2](https://github.com/webdna/auditor/issues/2))
