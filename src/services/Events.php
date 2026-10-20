@@ -22,7 +22,9 @@ use webdna\auditor\db\Table;
 use webdna\auditor\models\Event;
 use webdna\auditor\models\Filter;
 use webdna\auditor\watchers\AuthWatcher;
+use webdna\auditor\watchers\CommerceWatcher;
 use webdna\auditor\watchers\ElementWatcher;
+use webdna\auditor\watchers\PromotionsWatcher;
 use yii\base\Component;
 use yii\helpers\Inflector;
 
@@ -152,6 +154,7 @@ class Events extends Component
         'method' => 'Method',
         'name' => 'Name',
         'group' => 'Group',
+        'id' => 'ID',
     ];
 
     /**
@@ -597,7 +600,8 @@ class Events extends Component
     }
 
     /**
-     * An element type's name, or a user group's, or the class's own name when it is gone.
+     * An element type's name, or a user group's, a pricing rule's or a discount's, or the class's
+     * own name when it is gone.
      */
     public function typeLabel(?string $type): string
     {
@@ -606,6 +610,9 @@ class Events extends Component
         }
         if ($type === UserGroup::class) {
             return Craft::t('auditor', 'User group');
+        }
+        if ($type === PromotionsWatcher::PRICING_RULE || $type === PromotionsWatcher::DISCOUNT) {
+            return Craft::t('auditor', PromotionsWatcher::typeName($type));
         }
 
         return $this->displayName($type) ?? $type;
@@ -647,6 +654,10 @@ class Events extends Component
             $types[] = ['label' => $type::pluralDisplayName(), 'value' => $type];
         }
         $types[] = ['label' => Craft::t('auditor', 'User groups'), 'value' => UserGroup::class];
+        if (CommerceWatcher::applies()) {
+            $types[] = ['label' => Craft::t('auditor', 'Catalog pricing rules'), 'value' => PromotionsWatcher::PRICING_RULE];
+            $types[] = ['label' => Craft::t('auditor', 'Discounts'), 'value' => PromotionsWatcher::DISCOUNT];
+        }
         usort($types, fn($a, $b) => strcasecmp($a['label'], $b['label']));
 
         $sites = [$all];
@@ -748,7 +759,15 @@ class Events extends Component
 
         if ($event->family === Event::FAMILY_ELEMENT && in_array($event->event, [ElementWatcher::EVENT_SAVED, ElementWatcher::EVENT_CREATED], true)) {
             foreach ($data as $key => $entry) {
-                $entry = is_array($entry) ? $entry : [];
+                // A model's id, kept beside its changes (BR-40); an element's values are all changes.
+                if (!is_array($entry)) {
+                    $described['details'][] = ['key' => (string)$key, 'label' => $this->keyLabel((string)$key), 'value' => $this->format($entry), 'redacted' => false];
+                    continue;
+                }
+                if (self::isCount($entry)) {
+                    $described['changes'][] = $this->count((string)$key, $entry);
+                    continue;
+                }
                 if (self::isCollection($entry)) {
                     $described['collections'][] = $this->collection((string)$key, $entry);
                     continue;
@@ -822,6 +841,41 @@ class Events extends Component
         $field = Craft::$app->getFields()->getFieldByHandle($key);
 
         return $field !== null && Differ::isHtmlField($field);
+    }
+
+    /**
+     * A count of things added and removed that are not recorded themselves: a discount's coupon
+     * codes (BR-40).
+     *
+     * @param array<array-key, mixed> $entry
+     */
+    private static function isCount(array $entry): bool
+    {
+        return is_int($entry['added'] ?? null) && is_int($entry['removed'] ?? null);
+    }
+
+    /**
+     * @param array<array-key, mixed> $entry
+     * @return array{key: string, label: string, old: string, new: string, redacted: bool, html: bool}
+     */
+    private function count(string $key, array $entry): array
+    {
+        $parts = [];
+        if ($entry['added'] > 0) {
+            $parts[] = Craft::t('auditor', '{count} added', ['count' => $entry['added']]);
+        }
+        if ($entry['removed'] > 0) {
+            $parts[] = Craft::t('auditor', '{count} removed', ['count' => $entry['removed']]);
+        }
+
+        return [
+            'key' => $key,
+            'label' => Craft::t('auditor', (string)($entry['label'] ?? $key)),
+            'old' => '',
+            'new' => implode(', ', $parts),
+            'redacted' => false,
+            'html' => false,
+        ];
     }
 
     /**

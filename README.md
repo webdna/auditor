@@ -6,7 +6,8 @@ where, and what did it say before?" — and "who signed in, who failed to, and w
 
 - **Every content change, with its before and after.** Entries, assets, users, categories, tags,
   Craft Commerce orders and products, and any element type a plugin adds: created, saved, deleted,
-  restored and moved, with the value each changed field had before and after.
+  restored and moved, with the value each changed field had before and after. Commerce's catalog
+  pricing rules and discounts too.
 - **Every security event in the same log.** Sign-ins, failed sign-ins, lock-outs, password and email
   changes, two-step and passkey methods, changes to someone's groups or permissions, admin rights
   given or taken, and one person signing in as another.
@@ -39,7 +40,7 @@ where, and what did it say before?" — and "who signed in, who failed to, and w
 - Craft CMS 5.6 or later
 - PHP 8.2 or later
 - MySQL 8 (PostgreSQL is not yet tested)
-- Craft Commerce 5, only to record orders, products and variants
+- Craft Commerce 5, only to record orders, products, variants, catalog pricing rules and discounts
 
 ## Installation
 
@@ -171,6 +172,19 @@ to).
 
 Stock movements are not recorded: Commerce moves stock through inventory transactions, which save
 no element.
+
+### Catalog pricing rules and discounts
+
+A catalog pricing rule or a discount is recorded when it is created (with its values), saved (each
+setting that changed, before and after: name, description, store, dates, enabled, how and by how
+much the price changes, its conditions, and a discount's own settings such as its limits and whether
+it stops later discounts) and deleted. They are not elements, so a row about one has no link and is
+in no element's History; it is in the log, under its own type in the filter, and in its actor's
+Activity. Saving one with nothing changed records nothing.
+
+A discount's **coupon codes are counted, never recorded**: its row says how many were added and
+removed. The catalog prices Commerce regenerates from a rule, the customers its condition matches,
+and a discount's order and count of uses are not recorded.
 
 ## Configuration
 

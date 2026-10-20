@@ -14,6 +14,7 @@ use webdna\auditor\services\Recorder;
 use webdna\auditor\tests\Support\TestSite;
 use webdna\auditor\watchers\CommerceWatcher;
 use webdna\auditor\watchers\ElementWatcher;
+use webdna\auditor\watchers\PromotionsWatcher;
 use yii\base\Event as YiiEvent;
 
 /**
@@ -110,6 +111,13 @@ class ElementSnapshotTest extends Unit
         $this->assertNotEmpty($this->rowsFor($entry), 'saves record as usual');
         $this->assertFalse(class_exists(CommerceWatcher::ORDER, false), 'no Commerce class loaded');
         $this->assertFalse(class_exists('craft\\commerce\\Plugin', false));
+
+        // Nor are pricing rules and discounts offered (BR-40), nor their models loaded by asking.
+        $types = array_column(Auditor::getInstance()->getEvents()->filterOptions()['elementType'], 'value');
+        $this->assertNotContains(PromotionsWatcher::DISCOUNT, $types);
+        $this->assertNotContains(PromotionsWatcher::PRICING_RULE, $types);
+        $this->assertSame('Discount', Auditor::getInstance()->getEvents()->typeLabel(PromotionsWatcher::DISCOUNT));
+        $this->assertFalse(class_exists(PromotionsWatcher::DISCOUNT, false), 'no Commerce model loaded');
     }
 
     /**
