@@ -193,15 +193,28 @@ class ElementWatcher
     public function endJob(): void
     {
         $this->close(Batch::JOB);
+        $this->endOwners();
     }
 
     /**
-     * Ends whatever is still open — an action whose after event never came — as the request ends.
+     * Ends whatever is still open — an action whose after event never came, an owner's save that
+     * ended in an exception — as the request ends.
      */
     public function closeAll(): void
     {
         while ($this->batches !== []) {
             $this->close($this->batches[array_key_last($this->batches)]->key);
+        }
+        $this->endOwners();
+    }
+
+    /**
+     * Only a differ already made has scopes to close; the end of a request never makes one.
+     */
+    private function endOwners(): void
+    {
+        if ($this->plugin->has('differ', true)) {
+            $this->plugin->getDiffer()->endOwners();
         }
     }
 
@@ -217,10 +230,15 @@ class ElementWatcher
             // save inside a batch, which is never diffed (B3).
             $batch = $this->batch();
             $batched = $batch !== null && ($batch->definite || $element->resaving);
-            $snapshot = $batched || $this->isCreation($event) ? null : $this->plugin->getDiffer()->snapshot($element);
+            $differ = $this->plugin->getDiffer();
+            $snapshot = $batched || $this->isCreation($event) ? null : $differ->snapshot($element);
             $stack = $this->snapshots[$element] ?? [];
             $stack[] = $snapshot;
             $this->snapshots[$element] = $stack;
+            // The nested elements it saves in its own save are read together (BR-35).
+            if ($snapshot !== null) {
+                $differ->beginOwner($element);
+            }
         } catch (Throwable $e) {
             $this->fail('Could not snapshot an element before its save', $e);
         }
@@ -231,6 +249,9 @@ class ElementWatcher
         try {
             $element = $event->element;
             $snapshot = $this->popSnapshot($element);
+            if ($snapshot !== null) {
+                $this->plugin->getDiffer()->endOwner($element);
+            }
             if ($this->skips($element)) {
                 return;
             }
