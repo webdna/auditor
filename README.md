@@ -310,6 +310,35 @@ closure that reads through `$differ->readStored($element, $key, fn(array $ids) =
 values by id, is read once for all the nested elements an owner saves together. The new value is
 always read as `$element->{$name}`. The event is raised once per element type.
 
+#### A plugin's own element type
+
+Auditor records any element type's saves, but for one it does not know — a plugin's reviews, say —
+it tracks only the custom fields on its layout. Values the element keeps in its own table are not
+fields, so name them. Here a review's status and rating sit in the plugin's `reviews` table, one row
+per review keyed on the element id, as Craft's own element tables are:
+
+```php
+use myplugin\elements\Review;
+use webdna\auditor\events\DefineTrackedAttributesEvent;
+use webdna\auditor\services\Differ;
+use yii\base\Event;
+
+Event::on(Differ::class, Differ::EVENT_DEFINE_TRACKED_ATTRIBUTES, function(DefineTrackedAttributesEvent $event) {
+    if ($event->elementType === Review::class) {
+        $event->attributes['reviewStatus'] = 'reviews.status';
+        $event->attributes['rating'] = 'reviews.rating';
+    }
+});
+```
+
+Approving a review then records "Review status: pending → approved", the old value read from
+`reviews` before the save and the new one from `$review->reviewStatus`; a new review's row holds
+both values. The key is the element's property, the value its table and column without the table
+prefix. A row's label is the element's `getAttributeLabel()`, so give the property one in
+`attributeLabels()`. Track `title` or `enabled` the same way, with `'elements_sites.title'` and
+`'elements.enabled'` — a plugin's element type has no attribute tracked until you name it. A table
+keyed any other way, or with a row per site, needs a closure instead of a column.
+
 ### Add your own state to an element's row
 
 `Differ::EVENT_DEFINE_ELEMENT_SNAPSHOT` lets any code record state that is neither a field nor an

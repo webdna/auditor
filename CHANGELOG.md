@@ -4,6 +4,7 @@
 
 ### Added
 - Craft Commerce's catalog pricing rules and discounts are now recorded: created with their values, saved with each setting that changed, before and after (dates, how the price is applied, conditions, limits, whether a discount stops later ones), and deleted. A discount's coupon codes are counted as added and removed, never recorded. Both appear in the log's type filter. ([#2](https://github.com/webdna/auditor/issues/2))
+- The README shows how to record a plugin's own element type whose values sit in a table of its own, such as a review's status and rating, through the tracked-attributes event. ([#1](https://github.com/webdna/auditor/issues/1))
 
 ### Changed
 - A row's detail is easier to read. A field whose value is an array or object — a design field, a Table field's rows, a pricing rule's conditions — is shown key by key, with each key that changed marked, instead of as two blocks of JSON. An order's status change reads by the statuses' names ("New → Shipped") instead of their ids, rows recorded before this too. A variant is named with its product and SKU, such as "Giant Rail Gen 3 — S (GR3-S)", instead of its title alone. A pricing rule's or a discount's set values read in words, such as "Reduce the price by a percentage of the original price". ([#3](https://github.com/webdna/auditor/issues/3))
