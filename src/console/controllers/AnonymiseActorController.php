@@ -8,8 +8,9 @@ use webdna\auditor\Auditor;
 use yii\console\ExitCode;
 
 /**
- * Takes one deleted user's name out of the log, as deleting them does — for a user deleted
- * before Auditor was installed, or whose rewrite failed. A user who still exists is refused.
+ * Takes one deleted user out of the log, as deleting them does — for a user deleted before
+ * Auditor was installed or by a version that left the rows about them as they were, or whose
+ * rewrite failed. A user who still exists is refused.
  *
  * @since 1.0.0
  */
@@ -31,8 +32,9 @@ class AnonymiseActorController extends Controller
     }
 
     /**
-     * Rewrites the user's rows to "Deleted user #<id>" and clears the username from failed sign-ins
-     * against them.
+     * Rewrites the rows the user made to "Deleted user #<id>", and the rows about them — and about
+     * what they owned, such as their addresses — to that label (or the element's type and id)
+     * with every value redacted, the keys kept. Prints the rows rewritten, each counted once.
      */
     public function actionIndex(): int
     {
@@ -43,7 +45,7 @@ class AnonymiseActorController extends Controller
 
         // The rewrite cannot be undone, so a mistyped id must not reach a live account.
         if (User::find()->id($this->user)->status(null)->exists()) {
-            $this->stderr(sprintf("User #%d still exists. Delete them instead: that takes their name out of the log.\n", $this->user));
+            $this->stderr(sprintf("User #%d still exists. Delete them instead: that takes them out of the log.\n", $this->user));
             return ExitCode::UNSPECIFIED_ERROR;
         }
 

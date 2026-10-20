@@ -6,6 +6,7 @@ use Codeception\Test\Unit;
 use Craft;
 use craft\db\Connection;
 use craft\db\Query;
+use craft\elements\Address;
 use craft\elements\Entry;
 use craft\elements\User;
 use craft\helpers\Json;
@@ -177,52 +178,91 @@ class RetentionTest extends Unit
     }
 
     /**
-     * TS-8: `editor` saves an entry and is then deleted, in the same request. Their row — still in
-     * the buffer when the deletion happens — reads "Deleted user #<id>" with its id kept; the
-     * username typed in a failed sign-in against them is cleared, its reason kept; a row someone
-     * else made about them keeps that someone's name; the deletion itself is recorded.
+     * TS-8: `editor` saves an entry and an address of their own, an admin changes their email
+     * address, and they are deleted, in the same request. The rows they made read "Deleted user
+     * #<id>" with the id kept. The rows about them — their creation, the admin's save, the email
+     * change, a failed sign-in, their deletion — read "Deleted user #<id>" too, every key in
+     * `data` kept and every value `redacted: true`; their address's rows read "Address #<id>",
+     * redacted alike. Neither address, nor their name or street, is left anywhere in the table,
+     * while the admin's name and the entry's title stay.
      */
     public function testDeletingAUserTakesTheirNameOutOfTheirRows(): void
     {
         $site = TestSite::build();
         $editor = $site->user('editor');
+        $editor->firstName = 'Edna';
+        $site->save($editor);
         $admin = $site->user('admin', true);
         $failure = $this->write([
             'family' => Event::FAMILY_AUTH,
             'event' => AuthWatcher::EVENT_LOGIN_FAILED,
             'elementId' => $editor->id,
             'elementType' => User::class,
+            'elementLabel' => 'editor@example.com',
             'actorId' => $editor->id,
             'actorLabel' => 'editor@example.com',
             'data' => ['username' => 'editor@example.com', 'reason' => 'invalid_credentials'],
         ], 2);
-        $aboutThem = $this->write([
-            'family' => Event::FAMILY_ACCESS,
-            'event' => 'groupsChanged',
-            'elementId' => $editor->id,
-            'actorId' => $admin->id,
-            'actorLabel' => 'admin@example.com',
-        ], 1);
 
         Craft::$app->getUser()->setIdentity($editor);
         $entry = $site->entry('Theirs', [], $editor);
+        $address = new Address([
+            'ownerId' => $editor->id,
+            'title' => 'Home',
+            'fullName' => 'Edna Editor',
+            'addressLine1' => '1 Secret Street',
+            'locality' => 'London',
+            'countryCode' => 'GB',
+        ]);
+        $site->save($address);
+
         Craft::$app->getUser()->setIdentity($admin);
+        $editor->email = 'edna@example.org';
+        $site->save($editor);
         $this->assertTrue(Craft::$app->getElements()->deleteElement($editor));
         $this->recorder->flush();
 
         $label = 'Deleted user #' . $editor->id;
-        $saved = $this->row(['event' => ElementWatcher::EVENT_CREATED, 'elementId' => $entry->id]);
-        $this->assertSame($label, $saved['actorLabel']);
-        $this->assertSame((int)$editor->id, (int)$saved['actorId'], 'The id stays');
+        $created = $this->row(['event' => ElementWatcher::EVENT_CREATED, 'elementId' => $entry->id]);
+        $this->assertSame($label, $created['actorLabel']);
+        $this->assertSame((int)$editor->id, (int)$created['actorId'], 'The id stays');
+        $this->assertSame('Theirs', $created['elementLabel'], 'Not a row about them');
 
         $failed = $this->row(['id' => $failure]);
         $this->assertSame($label, $failed['actorLabel']);
-        $this->assertSame(['reason' => 'invalid_credentials'], Json::decode($failed['data']));
+        $this->assertSame($label, $failed['elementLabel']);
+        $this->assertEquals(['username' => ['redacted' => true], 'reason' => ['redacted' => true]], Json::decode($failed['data']));
 
-        $this->assertSame('admin@example.com', $this->row(['id' => $aboutThem])['actorLabel']);
-
+        $aboutThem = (new Query())->from(Table::EVENTS)->where(['elementId' => $editor->id])->all($this->db);
+        $events = array_column($aboutThem, 'event');
+        foreach ([ElementWatcher::EVENT_CREATED, ElementWatcher::EVENT_SAVED, AuthWatcher::EVENT_EMAIL_CHANGED, ElementWatcher::EVENT_DELETED] as $event) {
+            $this->assertContains($event, $events);
+        }
+        foreach ($aboutThem as $row) {
+            $this->assertSame($label, $row['elementLabel'], $row['event']);
+            $this->assertRedacted($row);
+        }
+        $saved = $this->row(['event' => ElementWatcher::EVENT_SAVED, 'elementId' => $editor->id, 'actorId' => $admin->id]);
+        $this->assertArrayHasKey('email', Json::decode($saved['data']), 'Which fields changed stays');
+        $this->assertSame('admin@example.com', $saved['actorLabel'], 'Recorded, by whoever changed them');
         $deleted = $this->row(['event' => ElementWatcher::EVENT_DELETED, 'elementId' => $editor->id]);
         $this->assertSame('admin@example.com', $deleted['actorLabel'], 'Recorded, by whoever deleted them');
+
+        $theirAddress = (new Query())->from(Table::EVENTS)->where(['elementId' => $address->id])->all($this->db);
+        $this->assertNotSame([], $theirAddress);
+        foreach ($theirAddress as $row) {
+            $this->assertSame('Address #' . $address->id, $row['elementLabel'], $row['event']);
+            $this->assertRedacted($row);
+        }
+
+        $table = Json::encode(array_map(
+            fn(array $row) => array_diff_key($row, ['ip' => true, 'userAgent' => true]),
+            (new Query())->from(Table::EVENTS)->all($this->db),
+        ));
+        foreach (['editor@example.com', 'edna@example.org', 'Edna', 'Secret Street'] as $trace) {
+            $this->assertStringNotContainsString($trace, $table);
+        }
+        $this->assertStringContainsString('admin@example.com', $table);
         $this->assertSame($entry->title, Entry::find()->id($entry->id)->status(null)->trashed(null)->one()?->title);
     }
 
@@ -250,8 +290,9 @@ class RetentionTest extends Unit
     }
 
     /**
-     * `auditor/anonymise-actor` counts each row rewritten once — a failed sign-in whose actor and
-     * username both change is one row — and a second run rewrites nothing.
+     * `auditor/anonymise-actor` counts each row rewritten once, whether its actor, its subject or
+     * both are the user — a failed sign-in they made against their own account is one row — and
+     * a row owned by them (their address) counts too; a second run rewrites nothing.
      */
     public function testAnonymiseActorCountsEachRowOnceAndIsSafeToRepeat(): void
     {
@@ -270,12 +311,31 @@ class RetentionTest extends Unit
             'elementId' => 9002,
             'data' => ['username' => null, 'reason' => 'invalid_credentials'],
         ], 1);
-        $other = $this->write(['actorId' => 9003, 'actorLabel' => 'stays@example.com'], 1);
+        $this->write([
+            'elementId' => 9002,
+            'elementType' => User::class,
+            'elementLabel' => 'gone@example.com',
+            'data' => ['email' => ['label' => 'Email', 'old' => 'was@example.com', 'new' => 'gone@example.com']],
+        ], 1);
+        $owned = $this->write([
+            'elementId' => 9004,
+            'elementType' => Address::class,
+            'elementLabel' => 'Home',
+            'ownerId' => 9002,
+            'data' => ['addressLine1' => ['label' => 'Address Line 1', 'old' => null, 'new' => '1 Secret Street']],
+        ], 1);
+        $other = $this->write(['actorId' => 9003, 'actorLabel' => 'stays@example.com', 'elementId' => 9003, 'elementLabel' => 'stays@example.com'], 1);
 
         [$code, $out] = $this->anonymise(9002);
         $this->assertSame(ExitCode::OK, $code);
-        $this->assertSame("2 rows rewritten for user #9002.\n", $out);
+        $this->assertSame("5 rows rewritten for user #9002.\n", $out);
+        $this->assertSame(
+            ['addressLine1' => ['label' => 'Address Line 1', 'redacted' => true]],
+            Json::decode($this->row(['id' => $owned])['data']),
+        );
+        $this->assertSame('Address #9004', $this->row(['id' => $owned])['elementLabel']);
         $this->assertSame('stays@example.com', $this->row(['id' => $other])['actorLabel']);
+        $this->assertSame('stays@example.com', $this->row(['id' => $other])['elementLabel']);
 
         [, $out] = $this->anonymise(9002);
         $this->assertSame("0 rows rewritten for user #9002.\n", $out);
@@ -322,6 +382,20 @@ class RetentionTest extends Unit
     private function ids(): array
     {
         return array_map('intval', (new Query())->select('id')->from(Table::EVENTS)->orderBy('id')->column($this->db));
+    }
+
+    /**
+     * Every key in a row's `data` holds `{redacted: true}`, with its label where it had one.
+     *
+     * @param array<string, mixed> $row
+     */
+    private function assertRedacted(array $row): void
+    {
+        $data = $row['data'] === null ? [] : Json::decode($row['data']);
+        foreach ($data as $key => $value) {
+            $this->assertSame(true, $value['redacted'] ?? null, "{$row['event']}: $key");
+            $this->assertSame([], array_diff(array_keys($value), ['label', 'redacted']), "{$row['event']}: $key");
+        }
     }
 
     /**

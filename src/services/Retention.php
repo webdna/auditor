@@ -3,6 +3,7 @@
 namespace webdna\auditor\services;
 
 use Craft;
+use craft\base\ElementInterface;
 use craft\db\Connection;
 use craft\db\Query;
 use craft\helpers\Db;
@@ -13,12 +14,11 @@ use webdna\auditor\Auditor;
 use webdna\auditor\db\Table;
 use webdna\auditor\models\Event;
 use webdna\auditor\models\Settings;
-use webdna\auditor\watchers\AuthWatcher;
 use yii\base\Component;
 
 /**
  * The only two changes the log's rows ever undergo once written (BR-1): removal by age (BR-25) and
- * a deleted user's name taken out of them (BR-26).
+ * a deleted user taken out of them (BR-26).
  *
  * @since 1.0.0
  */
@@ -31,9 +31,9 @@ class Retention extends Component
     public const BATCH_SIZE = 10000;
 
     /**
-     * Failed sign-ins read and rewritten at a time while clearing their usernames (BR-26).
+     * Rows about a deleted user read and rewritten at a time (BR-26).
      */
-    private const USERNAME_CHUNK = 1000;
+    private const REWRITE_CHUNK = 1000;
 
     /**
      * Null means Craft's own connection.
@@ -86,13 +86,17 @@ class Retention extends Component
     }
 
     /**
-     * Takes a user's name out of the log (BR-26): every row they made reads "Deleted user #<id>",
-     * and the username typed in each failed sign-in against their account is cleared. Their id
-     * stays on every row, so the record still holds together.
+     * Takes a deleted user out of the log (BR-26). Every row they made reads "Deleted user #<id>"
+     * as its actor. Every row about them — whose subject is the user, or an element they own, such
+     * as their addresses — loses its label and its values: the user's rows read "Deleted user
+     * #<id>", an owned element's "<type> #<id>", and each key in `data` keeps only its label,
+     * marked `redacted`. The username typed in a failed sign-in against them goes with the rest.
+     * Ids stay on every row, so the record still holds together.
      *
-     * Safe to run again: a row already rewritten is not counted twice.
+     * Safe to run again: a row already rewritten is rewritten, and counted, no more.
      *
-     * @return int The rows rewritten.
+     * @return int The rows rewritten, each counted once whether its actor, its subject or both
+     * were the user.
      */
     public function anonymiseActor(int $userId): int
     {
@@ -100,33 +104,48 @@ class Retention extends Component
         $label = self::deletedUserLabel($userId);
         $rewritten = 0;
 
-        // Failed sign-ins first, while each row's actor still shows whether the update below will
-        // rewrite (and count) it anyway.
-        $failures = (new Query())
-            ->select(['id', 'actorId', 'actorLabel', 'data'])
-            ->from(Table::EVENTS)
-            ->where([
-                'elementId' => $userId,
-                'family' => Event::FAMILY_AUTH,
-                'event' => AuthWatcher::EVENT_LOGIN_FAILED,
-            ])
-            ->orderBy(['id' => SORT_ASC]);
+        // Rows about them first, taking the actor too where it is them, so the update below does
+        // not reach (and count) the same row again. Paged by id, not by a cursor, because each
+        // page is rewritten before the next is read.
+        $lastId = 0;
+        do {
+            $rows = (new Query())
+                ->select(['id', 'elementId', 'elementType', 'actorId', 'actorLabel', 'elementLabel', 'data'])
+                ->from(Table::EVENTS)
+                ->where(['or', ['elementId' => $userId], ['ownerId' => $userId]])
+                ->andWhere(['>', 'id', $lastId])
+                ->orderBy(['id' => SORT_ASC])
+                ->limit(self::REWRITE_CHUNK)
+                ->all($db);
 
-        foreach ($failures->batch(self::USERNAME_CHUNK, $db) as $rows) {
             foreach ($rows as $row) {
+                $lastId = (int)$row['id'];
                 $data = is_string($row['data']) ? Json::decodeIfJson($row['data']) : $row['data'];
-                if (!is_array($data) || ($data['username'] ?? null) === null) {
-                    continue;
-                }
-                unset($data['username']);
-                // The query builder encodes a JSON column's value itself.
-                $db->createCommand()->update(Table::EVENTS, ['data' => $data], ['id' => $row['id']])->execute();
+                $columns = [];
 
-                if ((int)$row['actorId'] !== $userId || $row['actorLabel'] === $label) {
+                $elementLabel = (int)$row['elementId'] === $userId
+                    ? $label
+                    : self::ownedLabel($row['elementType'], (int)$row['elementId']);
+                if ($row['elementLabel'] !== $elementLabel) {
+                    $columns['elementLabel'] = $elementLabel;
+                }
+                if (is_array($data)) {
+                    $redacted = self::redactValues($data);
+                    if ($redacted !== $data) {
+                        // The query builder encodes a JSON column's value itself.
+                        $columns['data'] = $redacted;
+                    }
+                }
+                if ((int)$row['actorId'] === $userId && $row['actorLabel'] !== $label) {
+                    $columns['actorLabel'] = $label;
+                }
+
+                if ($columns !== []) {
+                    $db->createCommand()->update(Table::EVENTS, $columns, ['id' => $row['id']])->execute();
                     $rewritten++;
                 }
             }
-        }
+        } while (count($rows) === self::REWRITE_CHUNK);
 
         $rewritten += $db->createCommand()->update(
             Table::EVENTS,
@@ -135,6 +154,37 @@ class Retention extends Component
         )->execute();
 
         return $rewritten;
+    }
+
+    /**
+     * A row's `data` with every value replaced by `{redacted: true}` and its key kept — `{label,
+     * redacted: true}` where the value had a label, as BR-10 records a redacted change.
+     *
+     * @param array<array-key, mixed> $data
+     * @return array<array-key, mixed>
+     */
+    private static function redactValues(array $data): array
+    {
+        foreach ($data as $key => $value) {
+            $data[$key] = is_array($value) && is_string($value['label'] ?? null)
+                ? ['label' => $value['label'], 'redacted' => true]
+                : ['redacted' => true];
+        }
+
+        return $data;
+    }
+
+    /**
+     * What a row about an element the deleted user owned reads as its subject: its type and id,
+     * as a title that could hold a redacted value is (BR-41), in English.
+     */
+    private static function ownedLabel(?string $type, int $elementId): string
+    {
+        $name = $type !== null && is_subclass_of($type, ElementInterface::class)
+            ? $type::displayName()
+            : 'Element';
+
+        return sprintf('%s #%d', $name, $elementId);
     }
 
     /**

@@ -491,9 +491,9 @@ class AuthWatcher
     }
 
     /**
-     * A user deleted — to the trash or for good: their name comes out of the log's rows once the
-     * deletion commits (BR-26). The deletion itself is recorded by the element watcher, under the
-     * user's label. Craft's garbage collection purges a trashed user without any event, which is
+     * A user deleted — to the trash or for good: they come out of the log's rows, those they made
+     * and those about them, once the deletion commits (BR-26). The deletion itself is recorded by
+     * the element watcher, and rewritten with the rest. Craft's garbage collection purges a trashed user without any event, which is
      * why the trashing is the moment, and a user restored from the trash stays anonymised.
      */
     public function userDeleted(ElementEvent $event): void

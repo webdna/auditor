@@ -332,12 +332,18 @@ audit log, what it holds and for how long.
 - **Retention.** Rows older than `retentionDays` are removed by Craft's garbage collection, in batches
   of 10,000, and on demand by `auditor/prune`.
 - **Redaction.** List any field whose value should never be kept.
-- **Deleted people.** When a user is deleted, the rows they made are rewritten to read "Deleted user
-  #123" and the username is cleared from failed sign-ins against them. The record of what happened
-  stays. This happens when the user goes to the trash, so restoring them does not bring their name
-  back. Rows *about* the user (their own sign-ins, say) keep the name they were recorded under, as
-  any deleted subject does. `auditor/anonymise-actor --user=<id>` does the same for a user deleted
-  before Auditor was installed; it refuses a user who still exists, because it cannot be undone.
+- **Deleted people.** When a user is deleted, they are taken out of the log in both directions. The
+  rows they made are rewritten to read "Deleted user #123" as who did it. The rows *about* them —
+  their account's creation and saves, their sign-ins and failed sign-ins, their email, group and
+  permission changes, their deletion — are named "Deleted user #123" too, and every value in them
+  is replaced by "value not recorded", so a row still says which fields changed and when, but not
+  to what. Rows about what they owned, such as their addresses, are treated the same way and named
+  by type and id ("Address #456"). Ids, dates, IP addresses and browsers stay, and age out with the
+  row. This happens when the user goes to the trash, so restoring them does not bring anything
+  back. Any other deleted subject, which is not a person, keeps its name and values.
+  `auditor/anonymise-actor --user=<id>` does the same for a user deleted before Auditor was
+  installed, or by a version that left the rows about them as they were; it refuses a user who
+  still exists, because it cannot be undone.
 - **Addresses** are shown only to people with the permission to see them.
 
 Auditor sends nothing anywhere: no email, notification or webhook.
