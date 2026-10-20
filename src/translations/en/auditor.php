@@ -151,4 +151,12 @@ return [
     'Amount' => 'Amount',
     'Included in price' => 'Included in price',
     'Line item' => 'Line item',
+    'Catalog pricing rule' => 'Catalog pricing rule',
+    'Catalog pricing rules' => 'Catalog pricing rules',
+    'Discount' => 'Discount',
+    'Discounts' => 'Discounts',
+    'Coupon codes' => 'Coupon codes',
+    '{count} added' => '{count} added',
+    '{count} removed' => '{count} removed',
+    'ID' => 'ID',
 ];

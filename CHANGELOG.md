@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- Craft Commerce's catalog pricing rules and discounts are now recorded: created with their values, saved with each setting that changed, before and after (dates, how the price is applied, conditions, limits, whether a discount stops later ones), and deleted. A discount's coupon codes are counted as added and removed, never recorded. Both appear in the log's type filter. ([#2](https://github.com/webdna/auditor/issues/2))
+
 ### Fixed
 - A redacted value no longer appears through a generated title. When an element's title is made from a title format (no title field) and its layout holds a redacted field, or its type a redacted attribute such as a variant's SKU, its title and slug are recorded as redacted and its rows are named by type and id, such as "Entry #123". ([#4](https://github.com/webdna/auditor/issues/4))
 - Deleting a user now takes them out of the rows about them as well as the rows they made. Their account's rows (its creation, saves, sign-ins and access changes, and its deletion), and the rows about anything they owned such as their addresses, keep which fields changed and when, but their name and every value are replaced by "Deleted user #id" and "value not recorded". For a user deleted before this, run `php craft auditor/anonymise-actor --user=<id>`. ([#5](https://github.com/webdna/auditor/issues/5))

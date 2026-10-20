@@ -34,6 +34,7 @@ use yii\base\Event as YiiEvent;
  *   variant's SKU and its base and promotional prices. A variant's stock is not an attribute of its
  *   save: Commerce moves stock through inventory transactions, which save nothing, and a variant
  *   save only refreshes a stored summary of them.
+ * - **Catalog pricing rules and discounts** are recorded by {@see PromotionsWatcher} (BR-40).
  *
  * @since 1.0.0
  */
@@ -101,6 +102,7 @@ class CommerceWatcher
         YiiEvent::on(Elements::class, Elements::EVENT_AFTER_SAVE_ELEMENT, [$this, 'afterSave']);
         YiiEvent::on(Differ::class, Differ::EVENT_DEFINE_TRACKED_ATTRIBUTES, [$this, 'trackedAttributes']);
         YiiEvent::on(Differ::class, Differ::EVENT_DEFINE_ELEMENT_SNAPSHOT, [$this, 'snapshot']);
+        (new PromotionsWatcher())->attach();
     }
 
     /**
