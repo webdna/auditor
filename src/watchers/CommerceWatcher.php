@@ -161,8 +161,8 @@ class CommerceWatcher
                 'title' => 'elements_sites.title',
                 'enabled' => 'elements.enabled',
                 'sku' => 'commerce_purchasables.sku',
-                'basePrice' => fn(ElementInterface $element): mixed => $this->storedPrice($element, 'basePrice'),
-                'basePromotionalPrice' => fn(ElementInterface $element): mixed => $this->storedPrice($element, 'basePromotionalPrice'),
+                'basePrice' => fn(ElementInterface $element, Differ $differ): mixed => $this->storedPrice($element, $differ, 'basePrice'),
+                'basePromotionalPrice' => fn(ElementInterface $element, Differ $differ): mixed => $this->storedPrice($element, $differ, 'basePromotionalPrice'),
             ];
         }
     }
@@ -331,9 +331,10 @@ class CommerceWatcher
 
     /**
      * A variant's stored price in the store of the site it is saved for. Commerce resolves and
-     * keeps the store itself, so asking it costs no query here.
+     * keeps the store itself, so asking it costs no query here. Both prices are one read, shared
+     * with the other variants its product saves (BR-35).
      */
-    private function storedPrice(ElementInterface $element, string $column): ?float
+    private function storedPrice(ElementInterface $element, Differ $differ, string $column): ?float
     {
         try {
             $store = method_exists($element, 'getStore') ? $element->getStore() : null;
@@ -343,14 +344,17 @@ class CommerceWatcher
         if (!is_object($store) || !isset($store->id)) {
             return null;
         }
+        $storeId = (int)$store->id;
 
-        $price = (new Query())
-            ->select([$column])
+        $prices = $differ->readStored($element, 'prices:' . $storeId, fn(array $ids): array => (new Query())
+            ->select(['purchasableId', 'basePrice', 'basePromotionalPrice'])
             ->from(self::TABLE_PURCHASABLES_STORES)
-            ->where(['purchasableId' => $element->id, 'storeId' => $store->id])
-            ->scalar();
+            ->where(['purchasableId' => $ids, 'storeId' => $storeId])
+            ->indexBy('purchasableId')
+            ->all());
+        $price = is_array($prices) ? ($prices[$column] ?? null) : null;
 
-        return $price === null || $price === false ? null : (float)$price;
+        return $price === null ? null : (float)$price;
     }
 
     private static function text(mixed $value): ?string

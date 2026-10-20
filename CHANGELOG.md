@@ -5,6 +5,7 @@
 ### Fixed
 - A redacted value no longer appears through a generated title. When an element's title is made from a title format (no title field) and its layout holds a redacted field, or its type a redacted attribute such as a variant's SKU, its title and slug are recorded as redacted and its rows are named by type and id, such as "Entry #123". ([#4](https://github.com/webdna/auditor/issues/4))
 - Deleting a user now takes them out of the rows about them as well as the rows they made. Their account's rows (its creation, saves, sign-ins and access changes, and its deletion), and the rows about anything they owned such as their addresses, keep which fields changed and when, but their name and every value are replaced by "Deleted user #id" and "value not recorded". For a user deleted before this, run `php craft auditor/anonymise-actor --user=<id>`. ([#5](https://github.com/webdna/auditor/issues/5))
+- Saving a product with many variants, or an entry with many Matrix blocks, no longer costs extra queries for each one. The before-state of every nested element an owner saves in its own save is read together, in one query per table, so a product with sixteen variants costs the log what one with a single variant does. The README's batches section now says how to record an import's loop of saves as one batch. ([#7](https://github.com/webdna/auditor/issues/7))
 
 ## 1.0.0 - 2026-10-19
 

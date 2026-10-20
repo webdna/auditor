@@ -39,7 +39,9 @@ use yii\base\Component;
  * The before-state is read from the stored rows and never by loading the element (BR-8):
  * {@see snapshot()} runs one query over the element's content row joined to its attribute tables,
  * plus one per attribute kept elsewhere (an entry's authors), and only when there are candidates.
- * Call it before the save writes those rows; call {@see diff()} after.
+ * Call it before the save writes those rows; call {@see diff()} after. While an owner's save runs
+ * ({@see beginOwner()}), the nested elements it saves share those reads: the first one reads them
+ * for all of the owner's nested elements of its type, so their number costs nothing (BR-35).
  *
  * Craft stores each field as `serializeValueForDb()` produced it, keyed by the field's layout
  * element, and MySQL's JSON type reorders object keys; so the new value is serialised the same way
@@ -94,6 +96,23 @@ class Differ extends Component
     private array $tracked = [];
 
     /**
+     * Owners whose save is running, by element id, with how many times over: an owner saved again
+     * inside its own save opens its scope again.
+     *
+     * @var array<int, int>
+     */
+    private array $owners = [];
+
+    /**
+     * What has been read for an open owner's nested elements, by owner id, then by site and type:
+     * the ids the reads covered, their stored rows, and each {@see readStored()} key's values. An
+     * element's entries go once its snapshot is taken (BR-35).
+     *
+     * @var array<int, array<string, array{ids: array<int, true>, rows: array<int, array<string, mixed>>, reads: array<string, array<int, mixed>>}>>
+     */
+    private array $nested = [];
+
+    /**
      * The element's stored state for its candidates, read before the save writes it. Null for an
      * element not yet saved, which has no stored state and is recorded as created instead (BR-11).
      */
@@ -138,7 +157,7 @@ class Differ extends Component
 
         foreach ($attributes as $name => $source) {
             if ($source instanceof Closure) {
-                $storedAttributes[$name] = $source($element);
+                $storedAttributes[$name] = $source($element, $this);
             }
         }
 
@@ -149,7 +168,76 @@ class Differ extends Component
             $extra = $event->values;
         }
 
+        // Its save is about to rewrite what was read for it: a second save reads afresh.
+        $this->release($element);
+
         return new Snapshot($element->id, $element->siteId, array_keys($fields), $storedFields, $storedAttributes, $extra);
+    }
+
+    /**
+     * Opens an owner's scope as its save starts: until it ends, the nested elements it saves have
+     * their stored state read together, in one query per table whatever their number (BR-35).
+     */
+    public function beginOwner(ElementInterface $owner): void
+    {
+        if (!$owner->id) {
+            return;
+        }
+        $this->owners[$owner->id] = ($this->owners[$owner->id] ?? 0) + 1;
+        // Saved again inside its own save: what was read may since have been written.
+        unset($this->nested[$owner->id]);
+    }
+
+    public function endOwner(ElementInterface $owner): void
+    {
+        if (!$owner->id || !isset($this->owners[$owner->id])) {
+            return;
+        }
+        if (--$this->owners[$owner->id] <= 0) {
+            unset($this->owners[$owner->id], $this->nested[$owner->id]);
+        }
+    }
+
+    /**
+     * Closes every scope still open — an owner's save that ended in an exception — as the request
+     * or queue job ends.
+     */
+    public function endOwners(): void
+    {
+        $this->owners = [];
+        $this->nested = [];
+    }
+
+    /**
+     * A stored value kept outside the snapshot's one query, for a tracked attribute's closure.
+     *
+     * `$read` is given element ids and returns their values by id, one for each id it was given. For a
+     * nested element saved in its owner's save it is called once with the ids of all the owner's
+     * nested elements of that type, and the others take their values from that read (BR-35); for any
+     * other save, with the element's id alone.
+     *
+     * @param string $key Names the read: the same key is read once per owner
+     * @param Closure(int[]): array<int, mixed> $read
+     */
+    public function readStored(ElementInterface $element, string $key, Closure $read): mixed
+    {
+        $id = (int)$element->id;
+        $scope = $this->scope($element);
+        if ($scope !== null) {
+            [$ownerId, $group] = $scope;
+            $this->prefetch($element, $ownerId, $group);
+            $nested = $this->nested[$ownerId][$group];
+            if (isset($nested['ids'][$id])) {
+                if (!isset($nested['reads'][$key])) {
+                    $nested['reads'][$key] = $read(array_keys($nested['ids']));
+                    $this->nested[$ownerId][$group]['reads'][$key] = $nested['reads'][$key];
+                }
+
+                return $nested['reads'][$key][$id] ?? null;
+            }
+        }
+
+        return $read([$id])[$id] ?? null;
     }
 
     /**
@@ -373,12 +461,7 @@ class Differ extends Component
                 'enabledForSite' => 'elements_sites.enabled',
                 'postDate' => 'entries.postDate',
                 'expiryDate' => 'entries.expiryDate',
-                'authorIds' => static fn(ElementInterface $element): array => array_map('intval', (new Query())
-                    ->select(['authorId'])
-                    ->from(CraftTable::ENTRIES_AUTHORS)
-                    ->where(['entryId' => $element->id])
-                    ->orderBy(['sortOrder' => SORT_ASC])
-                    ->column()),
+                'authorIds' => static fn(ElementInterface $element, Differ $differ): mixed => $differ->readStored($element, 'authorIds', self::storedAuthors(...)),
                 'typeId' => 'entries.typeId',
                 'sectionId' => 'entries.sectionId',
             ],
@@ -415,6 +498,28 @@ class Differ extends Component
             ],
             default => [],
         };
+    }
+
+    /**
+     * Entries' stored authors, in order, by entry id: an empty list for an entry with none.
+     *
+     * @param int[] $ids
+     * @return array<int, int[]>
+     */
+    private static function storedAuthors(array $ids): array
+    {
+        $authors = array_fill_keys($ids, []);
+        $rows = (new Query())
+            ->select(['entryId', 'authorId'])
+            ->from(CraftTable::ENTRIES_AUTHORS)
+            ->where(['entryId' => $ids])
+            ->orderBy(['sortOrder' => SORT_ASC])
+            ->all();
+        foreach ($rows as $row) {
+            $authors[(int)$row['entryId']][] = (int)$row['authorId'];
+        }
+
+        return $authors;
     }
 
     /**
@@ -460,20 +565,41 @@ class Differ extends Component
 
     /**
      * The one query for a snapshot: the element's site row, its element row, and every other table
-     * a tracked column names, joined on the element id.
+     * a tracked column names, joined on the element id. A nested element saved in its owner's save
+     * takes its row from the one read of all the owner's nested elements of its type.
      *
      * @param array<string, string> $columns
      * @return array<string, mixed>|null
      */
     private function storedRow(ElementInterface $element, array $columns, bool $withContent): ?array
     {
-        $query = (new Query())
-            ->from(['elements_sites' => CraftTable::ELEMENTS_SITES])
-            ->innerJoin(['elements' => CraftTable::ELEMENTS], '[[elements.id]] = [[elements_sites.elementId]]')
-            ->where([
+        $scope = $this->scope($element);
+        if ($scope !== null) {
+            [$ownerId, $group] = $scope;
+            $this->prefetch($element, $ownerId, $group);
+            if (isset($this->nested[$ownerId][$group]['ids'][$element->id])) {
+                return $this->nested[$ownerId][$group]['rows'][$element->id] ?? null;
+            }
+        }
+
+        /** @var array<string, mixed>|null */
+        return $this->rowQuery($columns, $withContent)
+            ->andWhere([
                 'elements_sites.elementId' => $element->id,
                 'elements_sites.siteId' => $element->siteId,
-            ]);
+            ])
+            ->one($this->db) ?: null;
+    }
+
+    /**
+     * @param array<string, string> $columns
+     * @return Query<int, array<string, mixed>>
+     */
+    private function rowQuery(array $columns, bool $withContent): Query
+    {
+        $query = (new Query())
+            ->from(['elements_sites' => CraftTable::ELEMENTS_SITES])
+            ->innerJoin(['elements' => CraftTable::ELEMENTS], '[[elements.id]] = [[elements_sites.elementId]]');
 
         $select = $withContent ? ['__content' => 'elements_sites.content'] : [];
         $joined = ['elements' => true, 'elements_sites' => true];
@@ -487,8 +613,77 @@ class Differ extends Component
             $select[$name] = $column;
         }
 
-        /** @var array<string, mixed>|null */
-        return $query->select($select)->one($this->db) ?: null;
+        return $query->select($select);
+    }
+
+    /**
+     * The owner and the group a nested element's stored state is read with, while its owner's save
+     * is running; null for any other save.
+     *
+     * @return array{int, string}|null
+     */
+    private function scope(ElementInterface $element): ?array
+    {
+        if (!$element instanceof NestedElementInterface || $this->owners === []) {
+            return null;
+        }
+        $ownerId = $element->getOwnerId();
+        if ($ownerId === null || !isset($this->owners[$ownerId])) {
+            return null;
+        }
+
+        return [$ownerId, $element->siteId . ':' . $element::class];
+    }
+
+    /**
+     * Reads, once per owner, the stored rows of all the owner's nested elements of the element's
+     * type in its site: one query, whatever their number (BR-35). Their ids are what later reads for
+     * the group cover.
+     */
+    private function prefetch(ElementInterface $element, int $ownerId, string $group): void
+    {
+        if (isset($this->nested[$ownerId][$group])) {
+            return;
+        }
+
+        $columns = array_filter($this->trackedAttributes($element::class), 'is_string');
+        $rows = $this->rowQuery($columns, true)
+            ->addSelect(['__id' => 'elements_sites.elementId'])
+            ->andWhere([
+                'elements_sites.elementId' => (new Query())
+                    ->select(['elementId'])
+                    ->from(CraftTable::ELEMENTS_OWNERS)
+                    ->where(['ownerId' => $ownerId]),
+                'elements_sites.siteId' => $element->siteId,
+                'elements.type' => $element::class,
+            ])
+            ->all($this->db);
+
+        $nested = ['ids' => [], 'rows' => [], 'reads' => []];
+        foreach ($rows as $row) {
+            $id = (int)$row['__id'];
+            unset($row['__id']);
+            $nested['ids'][$id] = true;
+            $nested['rows'][$id] = $row;
+        }
+        $this->nested[$ownerId][$group] = $nested;
+    }
+
+    /**
+     * Forgets what was read for a nested element once its snapshot is taken.
+     */
+    private function release(ElementInterface $element): void
+    {
+        $scope = $this->scope($element);
+        if ($scope === null || !isset($this->nested[$scope[0]][$scope[1]])) {
+            return;
+        }
+        [$ownerId, $group] = $scope;
+        $id = (int)$element->id;
+        unset($this->nested[$ownerId][$group]['ids'][$id], $this->nested[$ownerId][$group]['rows'][$id]);
+        foreach (array_keys($this->nested[$ownerId][$group]['reads']) as $key) {
+            unset($this->nested[$ownerId][$group]['reads'][$key][$id]);
+        }
     }
 
     /**

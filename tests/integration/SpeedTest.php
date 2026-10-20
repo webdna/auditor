@@ -141,6 +141,60 @@ class SpeedTest extends Unit
         }
     }
 
+    /**
+     * BR-35 (#7): the blocks an entry saves in its own save have their stored state read together,
+     * in one query per table — their rows, their authors — so eight changed blocks cost what one
+     * does, and each block's row still holds its change.
+     */
+    public function testAnEntrySavesEightChangedBlocksForTheQueriesOfOne(): void
+    {
+        $this->plugin->set('recorder', new Recorder(['db' => $this->db]));
+        $extra = [];
+        foreach ([1, 8] as $count) {
+            $blocks = [];
+            foreach (range(1, $count) as $n) {
+                $blocks["new$n"] = ['type' => 'block', 'title' => "Block $n", 'fields' => ['blockText' => 'a']];
+            }
+            $entry = $this->site->entry("Blocks $count", ['blocks' => $blocks]);
+
+            AuditorListeners::detached(fn() => $this->changeBlocks($entry, 'b'));
+            $this->changeBlocks($entry, 'c');
+            $this->plugin->getRecorder()->flush();
+
+            $off = count($this->queriesDuring(fn() => AuditorListeners::detached(fn() => $this->changeBlocks($entry, 'd'))));
+            $on = count($this->queriesDuring(function() use ($entry) {
+                $this->changeBlocks($entry, 'e');
+                $this->plugin->getRecorder()->flush();
+            }));
+            $extra[$count] = $on - $off;
+
+            $rows = $this->db->createCommand('SELECT [[data]] FROM ' . Table::EVENTS . ' WHERE [[ownerId]] = :owner ORDER BY [[id]] DESC LIMIT ' . $count, [
+                ':owner' => $entry->id,
+            ])->queryColumn();
+            $this->assertCount($count, $rows, "$count blocks: one row each");
+            foreach ($rows as $data) {
+                $data = json_decode((string)$data, true);
+                $this->assertSame('d', $data['blockText']['old'] ?? null, "$count blocks: the stored text before the save");
+                $this->assertSame('e', $data['blockText']['new'] ?? null, "$count blocks: the text saved");
+            }
+        }
+
+        $this->assertSame($extra[1], $extra[8], sprintf('Extra queries: %d with one block, %d with eight', $extra[1], $extra[8]));
+    }
+
+    /**
+     * Saves the entry with every block posted and each one's text set, as the control panel's
+     * entry form saves it.
+     */
+    private function changeBlocks(Entry $entry, string $text): void
+    {
+        $blocks = [];
+        foreach (Entry::find()->ownerId($entry->id)->fieldId($this->site->fields['blocks']->id)->status(null)->ids() as $id) {
+            $blocks[$id] = ['type' => 'block', 'fields' => ['blockText' => $text]];
+        }
+        $this->change($entry, ['blocks' => $blocks]);
+    }
+
     private function view(): string
     {
         return $this->asWebRequest(function() {
@@ -189,7 +243,9 @@ class SpeedTest extends Unit
     private function queriesDuring(Closure $run): array
     {
         $harness = Yii::getLogger();
-        $logger = new Logger();
+        // Never flushed mid-count: a save with nested elements logs more than the thousand messages
+        // a logger keeps by default before it empties itself.
+        $logger = new Logger(['flushInterval' => PHP_INT_MAX]);
         Yii::setLogger($logger);
         try {
             $run();

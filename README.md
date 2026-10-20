@@ -117,6 +117,29 @@ resave fast. Set `recordBulkDiffs` to record each element in full instead.
 
 A batched job that Craft splits over several queue runs writes one batch row per run.
 
+**Imports.** A feed or script that calls `saveElement()` in a loop of its own, outside a Craft bulk
+operation, is a run of single saves: each element gets its own row, with its before-snapshot. Most
+import plugins work this way. To record the run as one batch, wrap the loop in a bulk operation:
+
+```php
+$elements = Craft::$app->getElements();
+$key = $elements->beginBulkOp();
+try {
+    foreach ($variants as $variant) {
+        $elements->saveElement($variant);
+    }
+} finally {
+    $elements->endBulkOp($key);
+}
+```
+
+A run of more than `bulkThreshold` elements is then one batch row.
+
+Saving an element that owns others — a product and its variants, an entry and its Matrix blocks —
+reads the before-state of all the nested elements it saves in one query per table, however many
+there are, so a product with sixteen variants costs the log as many queries as one with a single
+variant.
+
 ### Sign-ins and accounts
 
 Signed in · signed out · failed sign-in (the attempted username and Craft's real reason — never the
@@ -260,7 +283,9 @@ Event::on(Differ::class, Differ::EVENT_DEFINE_TRACKED_ATTRIBUTES, function(Defin
 
 Each attribute maps to where its **stored** value is read: `'table.column'` for a column (`elements`
 and `elements_sites` are the element's own rows; any other table is joined on its `id`), or a
-`Closure(ElementInterface $element): mixed` that returns the stored value itself. The new value is
+`Closure(ElementInterface $element, Differ $differ): mixed` that returns the stored value itself. A
+closure that reads through `$differ->readStored($element, $key, fn(array $ids) => [...])`, returning
+values by id, is read once for all the nested elements an owner saves together. The new value is
 always read as `$element->{$name}`. The event is raised once per element type.
 
 ### Add your own state to an element's row
