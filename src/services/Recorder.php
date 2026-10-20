@@ -185,11 +185,12 @@ class Recorder extends Component
     }
 
     /**
-     * Takes a deleted user's name out of the log (BR-26) once the deletion commits, and after the
-     * rows this request recorded are written — the user's own among them — so none escapes.
+     * Takes a deleted user out of the log (BR-26) once the deletion commits, and after the rows
+     * this request recorded are written — the ones they made and the ones about them, their
+     * deletion among them — so none escapes.
      *
-     * Not bound by the recording settings: a user deleted where nothing is recorded still has
-     * their name removed from the rows recorded elsewhere.
+     * Not bound by the recording settings: a user deleted where nothing is recorded is still taken
+     * out of the rows recorded elsewhere.
      */
     public function anonymiseActor(int $userId): void
     {
