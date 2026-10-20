@@ -13,6 +13,7 @@ use craft\events\ElementEvent;
 use craft\events\MoveElementEvent;
 use craft\helpers\ElementHelper;
 use craft\queue\BaseBatchedElementJob;
+use craft\queue\jobs\ResaveElements;
 use craft\services\Elements;
 use craft\services\Structures;
 use Throwable;
@@ -44,7 +45,8 @@ use yii\base\Event as YiiEvent;
  * operation is a candidate — Craft opens one around every single save — whose rows are recorded as
  * usual until one of its saves is a resave, or it touches more than `bulkThreshold` top-level
  * elements; then those rows are dropped and the batch row stands for them. A nested element counts
- * as its owner and is listed through it, however many of the owner's it saves. A job Craft splits over several queue runs is one
+ * as the top-level element it belongs to, however deep, and is listed through it, however many of
+ * that element's it saves. A job Craft splits over several queue runs is one
  * batch row per run. With `recordBulkDiffs` on there are no batches at all.
  *
  * Every listener is class-level, so the plugin creates nothing until an element event happens, and
@@ -66,6 +68,12 @@ class ElementWatcher
      * entry reads in full; anything deeper is named by Craft's own words.
      */
     private const LABEL_DEPTH = 3;
+
+    /**
+     * How many owners up a batch looks for the top-level element a nested one belongs to — far
+     * deeper than any real field layout, and a stop should owners ever form a loop.
+     */
+    private const ROOT_DEPTH = 20;
 
     /**
      * The operation a candidate batch is named after: what its first element went through.
@@ -174,13 +182,15 @@ class ElementWatcher
     }
 
     /**
-     * Called as a queue job starts, after the recorder's own: a run of a batched element job is a batch.
+     * Called as a queue job starts, after the recorder's own: a run of a batched element job is a
+     * batch. Craft's resave job is a re-save, named as the command's is (BR-14); any other is its class.
      */
     public function beginJob(object $job): void
     {
         try {
             if ($job instanceof BaseBatchedElementJob && $this->batching()) {
-                $this->batches[] = new Batch(Batch::JOB, $job::class, true);
+                $operation = $job instanceof ResaveElements ? Batch::OPERATION_RESAVE : $job::class;
+                $this->batches[] = new Batch(Batch::JOB, $operation, true);
             }
         } catch (Throwable $e) {
             $this->fail('Could not follow a queue job', $e);
@@ -397,17 +407,49 @@ class ElementWatcher
             $this->settle($batch, Batch::OPERATION_RESAVE);
         }
 
-        // A nested element counts toward its owner, not the total (BR-13): it covers the owner, so a
-        // resave of one field's nested entries still lists what they belong to.
-        $ownerId = $element instanceof NestedElementInterface ? $element->getOwnerId() : null;
+        // A nested element counts toward its root owner, not the total (BR-13): it covers the
+        // top-level element it belongs to, however deep, so a resave of one field's nested entries
+        // still lists what they belong to.
         if (
-            $batch->cover($ownerId ?? (int)$element->id, (int)$element->siteId, $element::class, self::OPERATIONS[$event]) &&
+            $batch->cover($this->rootId($batch, $element), (int)$element->siteId, $element::class, self::OPERATIONS[$event]) &&
             $batch->count() > $this->plugin->getSettings()->bulkThreshold
         ) {
             $this->settle($batch);
         }
 
         return $batch->definite;
+    }
+
+    /**
+     * The top-level element an element belongs to: itself, or its owner's owner and so on. In an
+     * owner's own save Craft has given each nested element its owner, so the walk reads nothing;
+     * a nested element saved alone loads its owners, once per owner for the batch.
+     */
+    private function rootId(Batch $batch, ElementInterface $element): int
+    {
+        $ownerId = $element instanceof NestedElementInterface ? $element->getOwnerId() : null;
+        if ($ownerId === null) {
+            return (int)$element->id;
+        }
+
+        if (!isset($batch->roots[$ownerId])) {
+            $rootId = $ownerId;
+            $owner = $element;
+            for ($depth = 0; $owner instanceof NestedElementInterface && $depth < self::ROOT_DEPTH; $depth++) {
+                try {
+                    $owner = $owner->getOwner();
+                } catch (Throwable) {
+                    $owner = null;
+                }
+                if ($owner === null) {
+                    break;
+                }
+                $rootId = isset($owner->id) ? (int)$owner->id : $rootId;
+            }
+            $batch->roots[$ownerId] = $rootId;
+        }
+
+        return $batch->roots[$ownerId];
     }
 
     /**

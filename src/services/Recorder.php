@@ -303,6 +303,17 @@ class Recorder extends Component
 
         $request = Craft::$app->getRequest();
         if ($request instanceof \craft\console\Request) {
+            // A script that boots the console app without handling a command is named by its file:
+            // its first argument is its own, not a command. Yii types the route a string, but it is
+            // unset until the app handles a request.
+            /** @var string|null $route */
+            $route = Craft::$app->requestedRoute;
+            if ($route === null) {
+                $script = $_SERVER['argv'][0] ?? null;
+
+                return is_string($script) && $script !== '' ? basename($script) : null;
+            }
+
             return $request->getParams()[0] ?? null;
         }
 
@@ -332,7 +343,7 @@ class Recorder extends Component
         if ($row->actorLabel === null) {
             $actor = $this->actor();
             $row->actorId = $actor?->id;
-            $row->actorLabel = $actor ? $actor->email : Event::SYSTEM;
+            $row->actorLabel = $actor ? $actor->email : ($context === Settings::CONTEXT_SITE ? Event::VISITOR : Event::SYSTEM);
             // Asked only when someone is signed in: it reads the session and loads a user.
             if ($actor && $web) {
                 $row->impersonatorId ??= Craft::$app->getUser()->getImpersonatorId();

@@ -20,9 +20,17 @@ class Event extends Model
     public const FAMILY_ACCESS = 'access';
 
     /**
-     * The actor label when nobody is signed in — a command or a job.
+     * The actor label when nobody is signed in — a command, a job, a control-panel request.
      */
     public const SYSTEM = 'System';
+
+    /**
+     * The actor label of a site request with nobody signed in, such as a form a visitor posts
+     * (§4). Stored in English, like {@see SYSTEM}; rows recorded before it read "System".
+     *
+     * @since 1.1.0
+     */
+    public const VISITOR = 'Visitor';
 
     /**
      * The actor label of a failed sign-in with a username nobody has: someone tried, and who is

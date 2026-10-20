@@ -4,6 +4,7 @@ namespace webdna\auditor\tests\integration;
 
 use Codeception\Test\Unit;
 use Craft;
+use craft\console\Request as ConsoleRequest;
 use craft\db\Connection;
 use craft\helpers\Json;
 use craft\queue\Queue;
@@ -32,6 +33,7 @@ use yii\log\Logger;
 class RecorderTest extends Unit
 {
     use SecondConnection;
+    use WebRequests;
 
     private Connection $db;
 
@@ -278,6 +280,59 @@ class RecorderTest extends Unit
         $this->recorder->settings = new Settings(['contexts' => [Settings::CONTEXT_CONSOLE]]);
         $this->recorder->record($this->row());
         $this->assertCount(1, $this->recorder->getReady());
+    }
+
+    /**
+     * BR-5 (#6): a script that boots the console app itself is named by its file, never by its
+     * first argument; a command run through `craft` is named by the command.
+     */
+    public function testAConsoleRowNamesItsCommandOrItsScript(): void
+    {
+        $request = Craft::$app->getRequest();
+        $route = Craft::$app->requestedRoute;
+        $argv = $_SERVER['argv'] ?? null;
+        $console = new ConsoleRequest();
+        Craft::$app->set('request', $console);
+
+        try {
+            $_SERVER['argv'] = ['/var/www/scripts/import-orders.php', '--check'];
+            // A script that never runs the app leaves the route unset, whatever Yii's type says.
+            Craft::$app->requestedRoute = null; // @phpstan-ignore assign.propertyType
+            $this->recorder->record($this->row());
+
+            $console->setParams(['resave/entries', '--elementId=1,2']);
+            Craft::$app->requestedRoute = 'resave/entries';
+            $this->recorder->record($this->row());
+        } finally {
+            Craft::$app->set('request', $request);
+            Craft::$app->requestedRoute = $route;
+            $_SERVER['argv'] = $argv;
+        }
+
+        $rows = $this->recorder->getReady();
+        $this->assertSame([Settings::CONTEXT_CONSOLE, Settings::CONTEXT_CONSOLE], array_map(fn(Event $row) => $row->context, $rows));
+        $this->assertSame(['import-orders.php', 'resave/entries'], array_map(fn(Event $row) => $row->contextDetail, $rows));
+    }
+
+    /**
+     * §4 `actorLabel` (#6): a site request with nobody signed in is a visitor, so a form a visitor
+     * posts reads apart from console and queue work; a control-panel request with nobody signed in,
+     * and a command, stay "System".
+     */
+    public function testASiteRequestWithNobodySignedInIsAVisitor(): void
+    {
+        $this->asWebRequest(fn() => $this->recorder->record($this->row()));
+        $this->asWebRequest(fn() => $this->recorder->record($this->row()), true);
+        $this->recorder->record($this->row());
+
+        $rows = $this->recorder->getReady();
+        $this->assertSame(
+            [[Settings::CONTEXT_SITE, Event::VISITOR], [Settings::CONTEXT_CP, Event::SYSTEM], [Settings::CONTEXT_CONSOLE, Event::SYSTEM]],
+            array_map(fn(Event $row) => [$row->context, $row->actorLabel], $rows),
+        );
+        $this->assertSame([null, null, null], array_map(fn(Event $row) => $row->actorId, $rows));
+        $this->assertSame('192.0.2.1', $rows[0]->ip, 'A visitor still has an address');
+        $this->assertSame('Visitor', Event::VISITOR, 'Stored in English, like "System"');
     }
 
     /**
