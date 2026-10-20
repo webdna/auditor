@@ -107,18 +107,35 @@
             </thead>
             <tbody>
                 {% for change in described.changes %}
-                    <tr data-auditor-field="{{ change.key }}">
-                        <th scope="row">{{ change.label }}</th>
-                        {% if change.redacted %}
-                            <td colspan="2">{{ redacted }}</td>
-                        {% elseif change.html %}
-                            <td>{{ _self.html(change.old) }}</td>
-                            <td>{{ _self.html(change.new) }}</td>
-                        {% else %}
-                            <td>{{ _self.value(change.old) }}</td>
-                            <td>{{ _self.value(change.new) }}</td>
-                        {% endif %}
-                    </tr>
+                    {% if not change.redacted and (change.keys ?? false) %}
+                        {# An array or object: the field, then a row per key, each key that changed marked. #}
+                        <tr data-auditor-field="{{ change.key }}" data-auditor-keys>
+                            <th scope="rowgroup" colspan="3">{{ change.label }}</th>
+                        </tr>
+                        {% for item in change.keys %}
+                            <tr class="auditor-key{{ item.changed ? ' auditor-key-changed' }}" data-auditor-key="{{ item.key }}"{% if item.changed %} data-auditor-changed{% endif %}>
+                                <th scope="row">
+                                    {{- item.key -}}
+                                    {%- if item.changed %} <span class="auditor-changed-mark">{{ 'changed'|t('auditor') }}</span>{% endif -%}
+                                </th>
+                                <td>{{ _self.value(item.old) }}</td>
+                                <td>{{ _self.value(item.new) }}</td>
+                            </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr data-auditor-field="{{ change.key }}">
+                            <th scope="row">{{ change.label }}</th>
+                            {% if change.redacted %}
+                                <td colspan="2">{{ redacted }}</td>
+                            {% elseif change.html %}
+                                <td>{{ _self.html(change.old) }}</td>
+                                <td>{{ _self.html(change.new) }}</td>
+                            {% else %}
+                                <td>{{ _self.value(change.old) }}</td>
+                                <td>{{ _self.value(change.new) }}</td>
+                            {% endif %}
+                        </tr>
+                    {% endif %}
                 {% endfor %}
             </tbody>
         </table>

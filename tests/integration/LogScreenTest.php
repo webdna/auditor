@@ -20,7 +20,9 @@ use webdna\auditor\models\Filter;
 use webdna\auditor\services\Events;
 use webdna\auditor\tests\Support\TestSite;
 use webdna\auditor\watchers\AuthWatcher;
+use webdna\auditor\watchers\CommerceWatcher;
 use webdna\auditor\watchers\ElementWatcher;
+use webdna\auditor\watchers\PromotionsWatcher;
 use Yii;
 use yii\log\Logger;
 use yii\web\ForbiddenHttpException;
@@ -266,6 +268,76 @@ class LogScreenTest extends Unit
         $this->assertStringContainsString('auditor-clipped" data-auditor-truncated data-auditor-clip>', $clipped);
         $this->assertStringContainsString(str_repeat('word ', 199) . 'word', $clipped, 'Clipped, never cut');
         $this->assertStringContainsString('data-auditor-more aria-expanded="false"', $clipped);
+    }
+
+    /**
+     * BR-30 (#3): an array or object value reads key by key, the keys that changed marked — the
+     * issue's eleven-key design field with one key changed — and still escaped (TN-3). A list of
+     * objects is numbered; a plain list and text stay on one line.
+     */
+    public function testAnObjectValueReadsKeyByKeyWithTheChangedKeysMarked(): void
+    {
+        $old = ['layout' => 'grid', 'columns' => 3, 'gap' => 16, 'align' => 'left', 'colour' => '#fff',
+            'shadow' => false, 'radius' => 4, 'padding' => ['top' => 8, 'bottom' => 8], 'font' => 'serif', 'width' => 'full', 'note' => null, ];
+        $new = ['columns' => 4] + $old;
+        $new['note'] = '<script>alert(1)</script>';
+        $new['padding'] = ['bottom' => 8, 'top' => 8];
+        $new['secret'] = ['redacted' => true];
+
+        $described = $this->describe(['data' => [
+            'design' => ['label' => 'Design', 'old' => $old, 'new' => $new],
+            'tags' => ['label' => 'Tags', 'old' => ['a', 'b'], 'new' => ['a', 'c']],
+            'rows' => ['label' => 'Rows', 'old' => [['x' => 1]], 'new' => [['x' => 1], ['x' => 2]]],
+            'title' => ['label' => 'Title', 'old' => 'A', 'new' => 'B'],
+        ]]);
+        [$design, $tags, $rows, $title] = $described['changes'];
+
+        $this->assertCount(12, $design['keys'], 'every key, the one added too');
+        $this->assertSame(
+            ['columns', 'note', 'secret'],
+            array_column(array_filter($design['keys'], fn(array $key) => $key['changed']), 'key'),
+            'key order inside a value is not a change',
+        );
+        $this->assertSame(['key' => 'columns', 'old' => '3', 'new' => '4', 'changed' => true], $design['keys'][0], 'the after side\'s key order');
+        $this->assertSame('value not recorded', $design['keys'][11]['new']);
+        $this->assertArrayNotHasKey('keys', $tags, 'a plain list stays on one line');
+        $this->assertSame('a, c', $tags['new']);
+        $this->assertSame([['Item 1', false], ['Item 2', true]], array_map(fn(array $key) => [$key['key'], $key['changed']], $rows['keys']));
+        $this->assertArrayNotHasKey('keys', $title);
+
+        $id = $this->insert(['data' => ['design' => ['label' => 'Design', 'old' => $old, 'new' => $new]]]);
+        $detail = $this->view($this->admin, $id);
+        $this->assertStringContainsString('data-auditor-field="design" data-auditor-keys', $detail);
+        $this->assertSame(3, substr_count($detail, 'data-auditor-changed'));
+        $this->assertMatchesRegularExpression('/data-auditor-key="columns" data-auditor-changed>\s*<th scope="row">columns <span class="auditor-changed-mark">changed/', $detail);
+        $this->assertStringContainsString('&lt;script&gt;alert(1)&lt;/script&gt;', $detail);
+        $this->assertStringNotContainsString('<script>alert', $detail);
+    }
+
+    /**
+     * BR-9, BR-40 (#3): an order's status reads by name, a row recorded before names were shown
+     * included — here with no Commerce at all, so by id — and a pricing rule's set values in words.
+     */
+    public function testCommerceValuesReadInWords(): void
+    {
+        $order = $this->describe(['elementType' => CommerceWatcher::ORDER, 'data' => [
+            'orderStatusId' => ['label' => 'Order Status ID', 'old' => 1, 'new' => 2],
+        ]]);
+        $this->assertSame(['Order status', '#1', '#2'], [$order['changes'][0]['label'], $order['changes'][0]['old'], $order['changes'][0]['new']]);
+
+        $rule = $this->describe(['elementType' => PromotionsWatcher::PRICING_RULE, 'data' => [
+            'apply' => ['label' => 'Price adjustment', 'old' => 'byPercent', 'new' => 'toFlat'],
+            'applyPriceType' => ['label' => 'Applied to', 'old' => null, 'new' => 'promotionalPrice'],
+            'name' => ['label' => 'Name', 'old' => 'byPercent', 'new' => 'x'],
+        ]]);
+        $this->assertSame(
+            [['Reduce the price by a percentage of the original price', 'Set the price to a flat amount'], ['', 'Original promotional price'], ['byPercent', 'x']],
+            array_map(fn(array $change) => [$change['old'], $change['new']], $rule['changes']),
+            'only a set value is worded',
+        );
+
+        $entry = $this->describe(['elementType' => Entry::class, 'data' => ['apply' => ['label' => 'Apply', 'old' => 'byPercent', 'new' => 'byFlat']]]);
+        $this->assertSame('byFlat', $entry['changes'][0]['new'], 'a field of the same handle elsewhere is left as stored');
     }
 
     /**

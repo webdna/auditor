@@ -10,6 +10,7 @@ use craft\commerce\elements\Variant;
 use craft\commerce\fieldlayoutelements\ProductTitleField;
 use craft\commerce\models\LineItemStatus;
 use craft\commerce\models\OrderAdjustment;
+use craft\commerce\models\OrderStatus;
 use craft\commerce\models\ProductType;
 use craft\commerce\models\ProductTypeSite;
 use craft\commerce\Plugin as Commerce;
@@ -235,6 +236,7 @@ class OrdersTest extends Unit
         $this->assertSame(9.0, (float)($row->data['basePromotionalPrice']['new'] ?? 0));
         $this->assertStringEndsWith('-B', (string)($row->data['sku']['new'] ?? ''));
         $this->assertArrayNotHasKey('stock', $row->data, 'stock is not an attribute of a save');
+        $this->assertSame('Harbour boot — ' . $boot->sku, $row->elementLabel, '#3: named with its product; a title made from the SKU is not repeated');
 
         /** @var Product $product */
         $product = $boot->getOwner();
@@ -243,6 +245,56 @@ class OrdersTest extends Unit
         $this->save($product);
         $productRow = $this->onlyRowFor($product);
         $this->assertSame(['label' => 'Title', 'old' => 'Harbour boot', 'new' => 'Harbour boot, waxed'], $productRow->data['title'] ?? null);
+    }
+
+    /**
+     * BR-12 (#3): a variant reads as "Product — Variant (SKU)", in a product's own save too, where
+     * its product is the one being saved; a variant titled as its product drops the repeat.
+     */
+    public function testAVariantIsLabelledWithItsProductAndSku(): void
+    {
+        [$boot, $cap] = $this->variants();
+        /** @var Product $product */
+        $product = $boot->getOwner();
+
+        $sized = new Variant(['title' => 'M / Red', 'sku' => 'BOOT-M-RED']);
+        $sized->setOwner($product);
+        $this->assertSame('Harbour boot — M / Red (BOOT-M-RED)', ElementWatcher::labelFor($sized));
+
+        $lone = new Variant(['title' => 'Harbour boot', 'sku' => 'BOOT-1']);
+        $lone->setOwner($product);
+        $this->assertSame('Harbour boot (BOOT-1)', ElementWatcher::labelFor($lone));
+
+        $this->clear();
+        $product->title = 'Harbour boot, waxed';
+        $cap->basePrice = 11;
+        $product->setVariants([$boot, $cap]);
+        $product->setDirtyAttributes(['variants']);
+        $this->save($product);
+        $capRow = $this->onlyRowFor($cap);
+        $this->assertSame('Harbour boot, waxed — ' . $cap->sku, $capRow->elementLabel);
+    }
+
+    /**
+     * BR-9, BR-23 (#3): an order's status change reads by its statuses' names.
+     */
+    public function testAnOrderStatusReadsByName(): void
+    {
+        [$boot] = $this->variants();
+        $order = $this->completedOrder([$boot]);
+        $from = $order->getOrderStatus();
+        $to = new OrderStatus(['name' => 'Shipped', 'handle' => 'shipped' . bin2hex(random_bytes(3)), 'color' => 'blue', 'storeId' => $order->getStore()->id]);
+        $this->assertTrue(Commerce::getInstance()->getOrderStatuses()->saveOrderStatus($to), implode(' ', $to->getFirstErrors()));
+        $this->clear();
+
+        $order->orderStatusId = $to->id;
+        $this->save($order);
+
+        $row = $this->onlyRowFor($order);
+        $this->assertSame(['old' => $from?->id, 'new' => $to->id], array_intersect_key($row->data['orderStatusId'] ?? [], ['old' => 1, 'new' => 1]), 'recorded by id');
+        $change = $this->plugin->getEvents()->describe($row)['changes'];
+        $status = array_values(array_filter($change, fn(array $item) => $item['key'] === 'orderStatusId'))[0];
+        $this->assertSame(['Order status', (string)$from?->name, $to->name], [$status['label'], $status['old'], $status['new']]);
     }
 
     /**

@@ -85,6 +85,26 @@
   overflow-wrap: anywhere;
 }
 
+/* An array or object field's keys, one row each, under the field's own row. */
+.auditor-key > th {
+  padding-left: 24px;
+  font-weight: normal;
+}
+
+.auditor-key-changed > th,
+.auditor-key-changed > td {
+  background-color: var(--yellow-050, #fefce8);
+}
+
+.auditor-changed-mark {
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background-color: var(--yellow-200, #fde68a);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .auditor-more {
   margin-top: 4px;
 }
