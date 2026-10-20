@@ -246,6 +246,30 @@ class OrdersTest extends Unit
     }
 
     /**
+     * BR-41 (#4): a variant's title generated from its SKU (`{sku}`, no variant title field) is
+     * redacted with the SKU, and the row is labelled by type and id.
+     */
+    public function testAVariantTitleMadeFromARedactedSkuIsRedacted(): void
+    {
+        [$boot] = $this->variants();
+        $this->clear();
+        $redact = $this->plugin->getSettings()->redact;
+        $this->plugin->getSettings()->redact = ['sku'];
+
+        try {
+            $boot->sku = 'SECRET-SKU-41';
+            $this->save($boot);
+            $row = $this->onlyRowFor($boot);
+        } finally {
+            $this->plugin->getSettings()->redact = $redact;
+        }
+
+        $this->assertSame(sprintf('%s #%s', Variant::displayName(), $boot->id), $row->elementLabel);
+        $this->assertSame(['label' => 'Title', 'redacted' => true], $row->data['title'] ?? null);
+        $this->assertStringNotContainsStringIgnoringCase('secret-sku-41', (string)json_encode([$row->elementLabel, $row->data]));
+    }
+
+    /**
      * The detail screen draws line items as a table: one row per item added or removed, one per
      * field changed.
      */

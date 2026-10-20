@@ -6,6 +6,7 @@ use Closure;
 use Craft;
 use craft\base\ElementInterface;
 use craft\base\FieldInterface;
+use craft\base\NestedElementInterface;
 use craft\db\Connection;
 use craft\db\Query;
 use craft\db\Table as CraftTable;
@@ -24,6 +25,7 @@ use webdna\auditor\events\DefineElementSnapshotEvent;
 use webdna\auditor\events\DefineTrackedAttributesEvent;
 use webdna\auditor\models\Settings;
 use webdna\auditor\models\Snapshot;
+use webdna\auditor\watchers\CommerceWatcher;
 use yii\base\Component;
 
 /**
@@ -70,6 +72,11 @@ class Differ extends Component
      * The base class of CKEditor's field, and of any other field that stores HTML.
      */
     public const HTML_FIELD_CLASS = 'craft\\htmlfield\\HtmlField';
+
+    /**
+     * Where a generated title shows: the title, and the slug Craft makes from it (BR-41).
+     */
+    private const TITLE_ATTRIBUTES = ['title', 'slug'];
 
     /**
      * Null means Craft's own connection — the one the element's rows were written on.
@@ -184,7 +191,7 @@ class Differ extends Component
             $changes += $this->extraChanges($element, $before->extra);
         }
 
-        return $changes;
+        return $this->hideTitle($element, $changes);
     }
 
     /**
@@ -219,7 +226,7 @@ class Differ extends Component
             $values += $this->extraChanges($element, []);
         }
 
-        return $values;
+        return $this->hideTitle($element, $values);
     }
 
     /**
@@ -245,6 +252,86 @@ class Differ extends Component
     public function isRedacted(string $name): bool
     {
         return in_array($name, $this->getSettings()->redact, true);
+    }
+
+    /**
+     * Whether the element's title may hold a redacted value (BR-41): its type has no title field,
+     * so the title is rendered from the type's title format, which can read any field or
+     * attribute, and its field layout holds a field, or its type tracks an attribute (a variant's
+     * `sku`), named in `redact`. The layout is asked, not the save, because the title holds the
+     * value on every later row too, whichever value changed.
+     *
+     * It reads nothing from the database: the settings, the layout and the type are loaded.
+     */
+    public function hidesTitle(ElementInterface $element): bool
+    {
+        $redact = array_diff($this->getSettings()->redact, self::TITLE_ATTRIBUTES);
+        if ($redact === []) {
+            return false;
+        }
+
+        $layout = $element->getFieldLayout();
+        $attributes = $this->trackedAttributes($element::class);
+        foreach ($redact as $name) {
+            if (isset($attributes[$name]) || $layout?->getFieldByHandle($name) !== null) {
+                return $this->hasGeneratedTitle($element);
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * An entry type without a title field, or a Commerce product or variant type without one —
+     * Commerce named as strings, so its classes are never loaded on the log's account.
+     */
+    private function hasGeneratedTitle(ElementInterface $element): bool
+    {
+        try {
+            if ($element instanceof Entry) {
+                return !$element->getType()->hasTitleField;
+            }
+            // Asked of the class name, so the element is never narrowed to a class that may not exist.
+            $class = $element::class;
+            if (is_a($class, CommerceWatcher::PRODUCT, true)) {
+                return self::typeLacks(method_exists($element, 'getType') ? $element->getType() : null, 'hasProductTitleField');
+            }
+            if (is_a($class, CommerceWatcher::VARIANT, true) && $element instanceof NestedElementInterface) {
+                $product = $element->getOwner();
+
+                return self::typeLacks($product !== null && method_exists($product, 'getType') ? $product->getType() : null, 'hasVariantTitleField');
+            }
+        } catch (Throwable) {
+            // A type deleted since has no format to generate a title from.
+        }
+
+        return false;
+    }
+
+    /**
+     * A generated title, and the slug made from it, recorded as `{label, redacted: true}` when it
+     * may hold a redacted value (BR-41).
+     *
+     * @param array<string, array<string, mixed>> $changes
+     * @return array<string, array<string, mixed>>
+     */
+    private function hideTitle(ElementInterface $element, array $changes): array
+    {
+        $names = array_intersect(self::TITLE_ATTRIBUTES, array_keys($changes));
+        if ($names === [] || !$this->hidesTitle($element)) {
+            return $changes;
+        }
+
+        foreach ($names as $name) {
+            $changes[$name] = ['label' => $changes[$name]['label'], 'redacted' => true];
+        }
+
+        return $changes;
+    }
+
+    private static function typeLacks(mixed $type, string $flag): bool
+    {
+        return is_object($type) && ($type->$flag ?? true) === false;
     }
 
     /**

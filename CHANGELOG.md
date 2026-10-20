@@ -1,5 +1,10 @@
 # Release Notes for Auditor
 
+## Unreleased
+
+### Fixed
+- A redacted value no longer appears through a generated title. When an element's title is made from a title format (no title field) and its layout holds a redacted field, or its type a redacted attribute such as a variant's SKU, its title and slug are recorded as redacted and its rows are named by type and id, such as "Entry #123". ([#4](https://github.com/webdna/auditor/issues/4))
+
 ## 1.0.0 - 2026-10-19
 
 ### Changed
