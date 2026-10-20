@@ -163,6 +163,11 @@ class Events extends Component
     private const HIDDEN_KEYS = ['structureId', 'targetId'];
 
     /**
+     * A Commerce order's status, recorded by its id (BR-9) and shown by its name.
+     */
+    private const ORDER_STATUS = 'orderStatusId';
+
+    /**
      * Payload keys whose value names a class — an element type, a two-step method, an action or a
      * job — shown by that class's own name while it exists.
      */
@@ -746,8 +751,13 @@ class Events extends Component
      * of items — an order's line items or adjustments (BR-23, BR-24) — is a `collection`: one table
      * row per item added or removed, and one per field changed on an item.
      *
+     * A value that is an array or an object is also given `keys`, one per key, each marked when it
+     * changed, so the one key of eleven that changed is not lost in two blocks of JSON. An order's
+     * status reads by name, a row recorded with its id included, and a pricing rule's or a
+     * discount's set values in words (BR-40).
+     *
      * @return array{
-     *     changes: list<array{key: string, label: string, old: string, new: string, redacted: bool, html: bool}>,
+     *     changes: list<array{key: string, label: string, old: string, new: string, redacted: bool, html: bool, keys?: list<array{key: string, old: string, new: string, changed: bool}>}>,
      *     details: list<array{key: string, label: string, value: string, redacted: bool, code?: string}>,
      *     collections: list<array{key: string, label: string, rows: list<array{id: string, item: string, change: string, old: string, new: string, redacted: bool}>}>,
      * }
@@ -758,6 +768,7 @@ class Events extends Component
         $data = $event->data ?? [];
 
         if ($event->family === Event::FAMILY_ELEMENT && in_array($event->event, [ElementWatcher::EVENT_SAVED, ElementWatcher::EVENT_CREATED], true)) {
+            $statuses = $this->orderStatuses($event, $data);
             foreach ($data as $key => $entry) {
                 // A model's id, kept beside its changes (BR-40); an element's values are all changes.
                 if (!is_array($entry)) {
@@ -772,14 +783,7 @@ class Events extends Component
                     $described['collections'][] = $this->collection((string)$key, $entry);
                     continue;
                 }
-                $described['changes'][] = [
-                    'key' => (string)$key,
-                    'label' => (string)($entry['label'] ?? $key),
-                    'old' => $this->format($entry['old'] ?? null),
-                    'new' => $this->format($entry['new'] ?? null),
-                    'redacted' => ($entry['redacted'] ?? false) === true,
-                    'html' => $this->isHtml((string)$key, $entry),
-                ];
+                $described['changes'][] = $this->elementChange($event, (string)$key, $entry, $statuses);
             }
 
             return $described;
@@ -802,6 +806,122 @@ class Events extends Component
         }
 
         return $described;
+    }
+
+    /**
+     * One field or attribute of a save or a creation, its values in words where words are known.
+     *
+     * @param array<array-key, mixed> $entry
+     * @param array<int, string> $statuses
+     * @return array{key: string, label: string, old: string, new: string, redacted: bool, html: bool, keys?: list<array{key: string, old: string, new: string, changed: bool}>}
+     */
+    private function elementChange(Event $event, string $key, array $entry, array $statuses): array
+    {
+        $old = $entry['old'] ?? null;
+        $new = $entry['new'] ?? null;
+        $label = (string)($entry['label'] ?? $key);
+
+        if ($key === self::ORDER_STATUS && $statuses !== []) {
+            $label = Craft::t('auditor', 'Order status');
+            $name = fn(mixed $id): mixed => is_numeric($id) ? ($statuses[(int)$id] ?? $id) : $id;
+            [$old, $new] = [$name($old), $name($new)];
+        }
+
+        $words = in_array($event->elementType, [PromotionsWatcher::PRICING_RULE, PromotionsWatcher::DISCOUNT], true)
+            ? PromotionsWatcher::VALUE_LABELS[$key] ?? []
+            : [];
+        if ($words !== []) {
+            $word = fn(mixed $value): mixed => is_string($value) && isset($words[$value]) ? Craft::t('auditor', $words[$value]) : $value;
+            [$old, $new] = [$word($old), $word($new)];
+        }
+
+        $change = [
+            'key' => $key,
+            'label' => $label,
+            'old' => $this->format($old),
+            'new' => $this->format($new),
+            'redacted' => ($entry['redacted'] ?? false) === true,
+            'html' => $this->isHtml($key, $entry),
+        ];
+        if (!$change['redacted'] && !$change['html']) {
+            $keys = $this->byKey($old, $new);
+            if ($keys !== []) {
+                $change['keys'] = $keys;
+            }
+        }
+
+        return $change;
+    }
+
+    /**
+     * The names of the order statuses a Commerce order's row holds by id, read when the row is
+     * shown — so a row recorded before names were shown reads the same — in one read, and only for
+     * a row whose status changed.
+     *
+     * @param array<array-key, mixed> $data
+     * @return array<int, string>
+     */
+    private function orderStatuses(Event $event, array $data): array
+    {
+        $entry = $data[self::ORDER_STATUS] ?? null;
+        if ($event->elementType !== CommerceWatcher::ORDER || !is_array($entry)) {
+            return [];
+        }
+        $ids = array_map('intval', array_filter([$entry['old'] ?? null, $entry['new'] ?? null], 'is_numeric'));
+
+        return CommerceWatcher::orderStatusNames($ids);
+    }
+
+    /**
+     * An array or object value key by key, each key's before and after and whether it changed, a
+     * list's items numbered from 1. Empty for any other value — text, a number, a plain list
+     * already shown on one line — and when one side is not an array at all.
+     *
+     * @return list<array{key: string, old: string, new: string, changed: bool}>
+     */
+    private function byKey(mixed $old, mixed $new): array
+    {
+        $structured = fn(mixed $value): bool => is_array($value) && $value !== []
+            && (!array_is_list($value) || array_filter($value, fn($item) => !is_scalar($item) && $item !== null) !== []);
+        if ((!$structured($old) && !$structured($new)) || ($old !== null && !is_array($old)) || ($new !== null && !is_array($new))) {
+            return [];
+        }
+        $old ??= [];
+        $new ??= [];
+        $list = array_is_list($old) && array_is_list($new);
+
+        $text = fn(mixed $value): string => $value === ['redacted' => true]
+            ? Craft::t('auditor', 'value not recorded')
+            : $this->format($value);
+
+        $keys = [];
+        foreach (array_keys($new + $old) as $name) {
+            $keys[] = [
+                'key' => $list ? Craft::t('auditor', 'Item {number}', ['number' => (int)$name + 1]) : (string)$name,
+                'old' => $text($old[$name] ?? null),
+                'new' => $text($new[$name] ?? null),
+                'changed' => array_key_exists($name, $old) !== array_key_exists($name, $new)
+                    || self::sorted($old[$name] ?? null) !== self::sorted($new[$name] ?? null),
+            ];
+        }
+
+        return $keys;
+    }
+
+    /**
+     * A value with every object's keys in order, so two that differ only in key order compare equal.
+     */
+    private static function sorted(mixed $value): mixed
+    {
+        if (!is_array($value)) {
+            return $value;
+        }
+        $value = array_map(self::sorted(...), $value);
+        if (!array_is_list($value)) {
+            ksort($value);
+        }
+
+        return $value;
     }
 
     /**

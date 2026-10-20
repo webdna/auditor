@@ -164,8 +164,10 @@ class NestedSnapshotTest extends Unit
     }
 
     /**
-     * The database commands run during a callback, counted from Yii's profiling log, as
-     * `SpeedTest` counts them.
+     * The reads, and the writes to the log's own table, run during a callback, counted from Yii's
+     * profiling log, as `SpeedTest` counts them. Auditor writes no table of Craft's or Commerce's,
+     * so a write to one is theirs, and how many they make in a save varies with the clock (this
+     * test failed on some runs with fewer queries on than off).
      *
      * @return string[]
      */
@@ -184,7 +186,11 @@ class NestedSnapshotTest extends Unit
 
         $queries = array_filter($logger->messages, fn(array $message) => $message[1] === Logger::LEVEL_PROFILE_BEGIN
             && str_starts_with((string)$message[2], 'yii\db\Command::'));
+        $log = Craft::$app->getDb()->getSchema()->getRawTableName(Table::EVENTS);
 
-        return array_values(array_map(fn(array $message) => (string)$message[0], $queries));
+        return array_values(array_filter(
+            array_map(fn(array $message) => (string)$message[0], $queries),
+            fn(string $sql) => preg_match('/^\s*SELECT\b/i', $sql) || str_contains($sql, $log),
+        ));
     }
 }

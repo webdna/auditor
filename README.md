@@ -248,8 +248,10 @@ edited is not an audit log.
 access), event, element type, person, context, site and date range; search matches the subject's and
 the person's names. Open any row for its detail: a Field / Before / After table for a save, the line
 items and adjustments for an order, or the payload for a sign-in or access event, with a link to
-everything else the same request did. Long values are cut at 500 characters with a control to show
-the rest. Nothing logged is ever rendered as HTML.
+everything else the same request did. A field whose value is an array or object is shown key by
+key, each key that changed marked; an order's status reads by name, a variant as "Product — Variant
+(SKU)". Long values are cut at 500 characters with a control to show the rest. Nothing logged is
+ever rendered as HTML.
 
 **History** (Pro) is in each element's action menu (the ⋯ button on its edit screen). It lists the
 element's changes newest first, one row per publish with its nested entries' changes beneath, and the

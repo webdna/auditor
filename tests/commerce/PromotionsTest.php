@@ -96,6 +96,11 @@ class PromotionsTest extends Unit
         $this->assertArrayNotHasKey('dateCreated', $row->data);
 
         $this->assertSame('Catalog pricing rule', $this->plugin->getEvents()->typeLabel($row->elementType));
+
+        // #3: a set value reads in words; a condition's rules read one by one.
+        $changes = array_column($this->plugin->getEvents()->describe($row)['changes'], null, 'key');
+        $this->assertSame('Reduce the price by a percentage of the original price', $changes['apply']['new']);
+        $this->assertSame(['Item 1'], array_column($changes['purchasableCondition']['keys'] ?? [], 'key'));
     }
 
     /**

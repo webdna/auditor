@@ -10,6 +10,7 @@ use craft\events\ElementEvent;
 use craft\helpers\Json;
 use craft\services\Elements;
 use Throwable;
+use webdna\auditor\Auditor;
 use webdna\auditor\events\DefineElementSnapshotEvent;
 use webdna\auditor\events\DefineTrackedAttributesEvent;
 use webdna\auditor\helpers\ItemDiff;
@@ -54,6 +55,7 @@ class CommerceWatcher
 
     private const TABLE_LINE_ITEMS = '{{%commerce_lineitems}}';
     private const TABLE_LINE_ITEM_STATUSES = '{{%commerce_lineitemstatuses}}';
+    private const TABLE_ORDER_STATUSES = '{{%commerce_orderstatuses}}';
     private const TABLE_ADJUSTMENTS = '{{%commerce_orderadjustments}}';
     private const TABLE_PURCHASABLES_STORES = '{{%commerce_purchasables_stores}}';
 
@@ -211,6 +213,73 @@ class CommerceWatcher
     public static function isOrder(ElementInterface $element): bool
     {
         return is_a($element, self::ORDER);
+    }
+
+    public static function isVariant(ElementInterface $element): bool
+    {
+        return is_a($element, self::VARIANT);
+    }
+
+    /**
+     * What a row calls a variant: its product, its own title and its SKU, "Harbour boot — S
+     * (BOOT-S)" (BR-12), since a variant's title alone ("S", "M / Red") names no product. A part
+     * that only repeats another is left out — a variant titled by its SKU, a lone variant titled as
+     * its product — and so is a redacted SKU. The product is the one being saved when a product
+     * saves its variants; a variant saved alone reads it, as an untitled nested element does.
+     */
+    public static function variantLabel(ElementInterface $variant, string $title, int $depth): string
+    {
+        $product = null;
+        if ($variant instanceof NestedElementInterface) {
+            try {
+                $product = $variant->getOwner();
+            } catch (Throwable) {
+                // A product deleted since: the variant's own words below.
+            }
+        }
+        $productLabel = $product !== null ? ElementWatcher::labelFor($product, $depth + 1) : '';
+        $label = $productLabel !== '' && $productLabel !== $title ? sprintf('%s — %s', $productLabel, $title) : $title;
+
+        $property = 'sku';
+        $sku = trim((string)($variant->$property ?? ''));
+        $redacted = Auditor::getInstance()?->getDiffer()->isRedacted($property) ?? true;
+        if ($sku !== '' && $sku !== $title && !$redacted) {
+            $label .= sprintf(' (%s)', $sku);
+        }
+
+        return $label;
+    }
+
+    /**
+     * Order statuses by name, for the ids an order's row recorded: one read, a deleted status
+     * included (Commerce keeps its row), "#<id>" for one that is gone, or when Commerce's table is.
+     *
+     * @param int[] $ids
+     * @return array<int, string>
+     */
+    public static function orderStatusNames(array $ids): array
+    {
+        $ids = array_values(array_unique($ids));
+        if ($ids === []) {
+            return [];
+        }
+        try {
+            $names = (new Query())
+                ->select(['name', 'id'])
+                ->from(self::TABLE_ORDER_STATUSES)
+                ->where(['id' => $ids])
+                ->indexBy('id')
+                ->column();
+        } catch (Throwable) {
+            $names = [];
+        }
+
+        $named = [];
+        foreach ($ids as $id) {
+            $named[$id] = isset($names[$id]) ? (string)$names[$id] : sprintf('#%d', $id);
+        }
+
+        return $named;
     }
 
     private static function isCompleted(ElementInterface $element): bool

@@ -7,6 +7,7 @@ use Codeception\Test\Unit;
 use Craft;
 use craft\db\Connection;
 use craft\elements\Entry;
+use craft\fields\Matrix;
 use craft\web\View;
 use webdna\auditor\Auditor;
 use webdna\auditor\db\Table;
@@ -123,11 +124,7 @@ class SpeedTest extends Unit
             $this->change($entry, $warmOn);
             $this->plugin->getRecorder()->flush();
 
-            $queriesOff = count($this->queriesDuring(fn() => AuditorListeners::detached(fn() => $this->change($entry, $off))));
-            $queriesOn = count($this->queriesDuring(function() use ($entry, $on) {
-                $this->change($entry, $on);
-                $this->plugin->getRecorder()->flush();
-            }));
+            [$queriesOff, $queriesOn] = $this->measured($entry, fn() => $this->change($entry, $off), fn() => $this->change($entry, $on));
 
             $this->assertLessThanOrEqual($budget, $queriesOn - $queriesOff, sprintf('%s: %d queries off, %d on', $case, $queriesOff, $queriesOn));
 
@@ -161,11 +158,7 @@ class SpeedTest extends Unit
             $this->changeBlocks($entry, 'c');
             $this->plugin->getRecorder()->flush();
 
-            $off = count($this->queriesDuring(fn() => AuditorListeners::detached(fn() => $this->changeBlocks($entry, 'd'))));
-            $on = count($this->queriesDuring(function() use ($entry) {
-                $this->changeBlocks($entry, 'e');
-                $this->plugin->getRecorder()->flush();
-            }));
+            [$off, $on] = $this->measured($entry, fn() => $this->changeBlocks($entry, 'd'), fn() => $this->changeBlocks($entry, 'e'));
             $extra[$count] = $on - $off;
 
             $rows = $this->db->createCommand('SELECT [[data]] FROM ' . Table::EVENTS . ' WHERE [[ownerId]] = :owner ORDER BY [[id]] DESC LIMIT ' . $count, [
@@ -180,6 +173,71 @@ class SpeedTest extends Unit
         }
 
         $this->assertSame($extra[1], $extra[8], sprintf('Extra queries: %d with one block, %d with eight', $extra[1], $extra[8]));
+    }
+
+    /**
+     * The queries of one save with Auditor off, then of another with it on, the row flushed.
+     *
+     * Craft skips a save's revision only when the last one was made in the same second as the
+     * entry's last update, so whether a measured save also wrote revisions hung on the clock — ~150
+     * extra queries on some runs. Neither save writes one, and Craft's other writes, which also vary
+     * with the clock, are not counted.
+     *
+     * @param Closure(): mixed $off
+     * @param Closure(): mixed $on
+     * @return array{int, int}
+     */
+    private function measured(Entry $entry, Closure $off, Closure $on): array
+    {
+        $versioning = $this->versioning($entry, false);
+        try {
+            return [
+                count($this->readsAndLogWrites($this->queriesDuring(fn() => AuditorListeners::detached($off)))),
+                count($this->readsAndLogWrites($this->queriesDuring(function() use ($on) {
+                    $on();
+                    $this->plugin->getRecorder()->flush();
+                }))),
+            ];
+        } finally {
+            $this->versioning($entry, ...$versioning);
+        }
+    }
+
+    /**
+     * The reads, and the writes to the log's own table: Auditor writes no table of Craft's, so a
+     * write to one is Craft's, and how many Craft makes in a save (touching `dateUpdated`, its bulk
+     * operation keys, savepoints) varies with the clock.
+     *
+     * @param list<string> $queries
+     * @return list<string>
+     */
+    private function readsAndLogWrites(array $queries): array
+    {
+        $log = Craft::$app->getDb()->getSchema()->getRawTableName(Table::EVENTS);
+
+        return array_values(array_filter($queries, fn(string $sql) => preg_match('/^\s*SELECT\b/i', $sql) || str_contains($sql, $log)));
+    }
+
+    /**
+     * Turns revisions on or off for the entry's section and for its blocks, and gives back what
+     * they were.
+     *
+     * @return array{bool, bool}
+     */
+    private function versioning(Entry $entry, bool $section, ?bool $blocks = null): array
+    {
+        $model = $entry->getSection();
+        $field = Craft::$app->getFields()->getFieldById((int)$this->site->fields['blocks']->id);
+        $was = [(bool)$model?->enableVersioning, $field instanceof Matrix && $field->enableVersioning];
+
+        if ($model !== null) {
+            $model->enableVersioning = $section;
+        }
+        if ($field instanceof Matrix) {
+            $field->enableVersioning = $blocks ?? $section;
+        }
+
+        return $was;
     }
 
     /**

@@ -117,6 +117,37 @@ class PromotionsWatcher
     ];
 
     /**
+     * The columns that hold one of Commerce's set values, each value in words, as Commerce's own
+     * settings screens put it — in English, translated when shown. A value not here is shown as
+     * stored.
+     */
+    public const VALUE_LABELS = [
+        'apply' => [
+            'byPercent' => 'Reduce the price by a percentage of the original price',
+            'byFlat' => 'Reduce the price by a fixed amount',
+            'toPercent' => 'Set the price to a percentage of the original price',
+            'toFlat' => 'Set the price to a flat amount',
+        ],
+        'applyPriceType' => [
+            'price' => 'Original price',
+            'promotionalPrice' => 'Original promotional price',
+        ],
+        'appliedTo' => [
+            'matchingLineItems' => 'Discount the matching items only',
+            'allLineItems' => 'Discount all line items',
+        ],
+        'percentageOffSubject' => [
+            'discounted' => 'Off the discounted item price',
+            'original' => 'Off the original item price',
+        ],
+        'categoryRelationshipType' => [
+            'sourceElement' => 'The purchasable defines the relationship',
+            'targetElement' => 'The purchasable is related by another element',
+            'element' => 'Either way',
+        ],
+    ];
+
+    /**
      * Each discount's row for the request, by discount id, so the coupon codes its save writes
      * after it join it. A discount saved with nothing changed has a row here too, not yet recorded.
      *

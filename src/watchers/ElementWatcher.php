@@ -508,13 +508,18 @@ class ElementWatcher
      *
      * A title generated from a layout holding a redacted field may hold the redacted value, so the
      * element is named by its type and id instead, "Entry #123" (BR-41) — as an owner too.
+     *
+     * A Commerce variant is named with its product and SKU, "Harbour boot — S (BOOT-S)".
      */
     public static function labelFor(ElementInterface $element, int $depth = 0): string
     {
         $title = $element->title ?? null;
         if (is_string($title) && trim($title) !== '') {
-            return Auditor::getInstance()?->getDiffer()->hidesTitle($element)
-                ? self::idLabel($element)
+            if (Auditor::getInstance()?->getDiffer()->hidesTitle($element)) {
+                return self::idLabel($element);
+            }
+            return CommerceWatcher::isVariant($element) && $depth < self::LABEL_DEPTH
+                ? CommerceWatcher::variantLabel($element, trim($title), $depth)
                 : trim($title);
         }
 

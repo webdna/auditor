@@ -159,4 +159,24 @@ return [
     '{count} added' => '{count} added',
     '{count} removed' => '{count} removed',
     'ID' => 'ID',
+    'Order status' => 'Order status',
+
+    // A pricing rule's and a discount's set values, as Commerce's settings screens word them
+    'Reduce the price by a percentage of the original price' => 'Reduce the price by a percentage of the original price',
+    'Reduce the price by a fixed amount' => 'Reduce the price by a fixed amount',
+    'Set the price to a percentage of the original price' => 'Set the price to a percentage of the original price',
+    'Set the price to a flat amount' => 'Set the price to a flat amount',
+    'Original price' => 'Original price',
+    'Original promotional price' => 'Original promotional price',
+    'Discount the matching items only' => 'Discount the matching items only',
+    'Discount all line items' => 'Discount all line items',
+    'Off the discounted item price' => 'Off the discounted item price',
+    'Off the original item price' => 'Off the original item price',
+    'The purchasable defines the relationship' => 'The purchasable defines the relationship',
+    'The purchasable is related by another element' => 'The purchasable is related by another element',
+    'Either way' => 'Either way',
+
+    // An array or object value, key by key
+    'Item {number}' => 'Item {number}',
+    'changed' => 'changed',
 ];
